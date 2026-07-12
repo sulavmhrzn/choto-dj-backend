@@ -1,4 +1,26 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  celery_worker:
+    build: .
+    command: uv run celery -A config worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
   db:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -70,3 +92,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
