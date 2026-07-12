@@ -1,0 +1,17 @@
+RESERVED_SHORT_CODES = {
+    "admin",
+    "api",
+    "auth",
+    "accounts",
+    "links",
+    "login",
+    "logout",
+    "signup",
+    "register",
+    "static",
+    "media",
+    "health",
+    "docs",
+    "swagger",
+    "redoc",
+}

@@ -6,10 +6,12 @@ from rest_framework_simplejwt.views import (
 )
 
 from apps.accounts.views import CustomTokenObtainPairAPIView
+from apps.links.views import ShortLinkRedirectAPIView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/accounts/", include("apps.accounts.urls")),
+    path("api/v1/links/", include("apps.links.urls")),
     path(
         "api/v1/auth/token/",
         CustomTokenObtainPairAPIView.as_view(),
@@ -20,4 +22,9 @@ urlpatterns = [
     ),
     path("api/v1/auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/", include("allauth.urls")),
+    path(
+        "<str:short_code>/",
+        ShortLinkRedirectAPIView.as_view(),
+        name="short-link-redirect",
+    ),
 ]
