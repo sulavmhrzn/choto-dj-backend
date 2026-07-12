@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
+from apps.analytics.services import click_event_create
+from apps.analytics.utils import get_client_ip
 from apps.links.models import ShortLink
 from apps.links.selectors import (
     short_link_get_for_user,
@@ -109,5 +111,10 @@ class ShortLinkRedirectAPIView(APIView):
         link = short_link_get_redirectable_by_code(short_code=short_code)
         if link is None:
             raise NotFound("Short link not found.")
-
+        click_event_create(
+            short_link=link,
+            referrer=request.META.get("HTTP_REFERRER", ""),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            ip_address=get_client_ip(request=request),
+        )
         return redirect(to=link.destination_url, permanent=False)
