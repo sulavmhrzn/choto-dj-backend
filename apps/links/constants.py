@@ -1,3 +1,6 @@
+MIN_SHORT_CODE_LENGTH = 3
+MAX_SHORT_CODE_LENGTH = 50
+
 RESERVED_SHORT_CODES = {
     "admin",
     "api",

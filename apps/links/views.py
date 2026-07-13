@@ -4,7 +4,7 @@ from uuid import UUID
 
 from django.shortcuts import redirect
 from rest_framework import status
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -46,8 +46,10 @@ class ShortLinkListCreateAPIView(APIView):
 
         serializer = ShortLinkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        link = short_link_create(owner=user, **serializer.validated_data)
+        try:
+            link = short_link_create(owner=user, **serializer.validated_data)
+        except ValueError as exc:
+            raise ValidationError({"short_code": str(exc)})
 
         response_serializer = ShortLinkSerializer(link)
 

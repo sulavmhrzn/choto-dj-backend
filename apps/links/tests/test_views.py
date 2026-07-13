@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.links.models import ShortLink
+from apps.links.services import short_link_create
 
 
 @pytest.fixture
@@ -192,3 +193,69 @@ def test_expired_short_link_returns_not_found(
         assert response["Location"] == link.destination_url
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_authenticated_user_can_create_link_with_custom_alias(
+    authenticated_client,
+):
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data={
+            "destination_url": "https://example.com",
+            "title": "Portfolio",
+            "short_code": "my-portfolio",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.data["short_code"] == "my-portfolio"
+
+
+@pytest.mark.django_db
+def test_duplicate_custom_alias_returns_400(
+    authenticated_client,
+):
+    url = reverse("links:list-create")
+
+    first_response = authenticated_client.post(
+        url,
+        data={
+            "destination_url": "https://example.com/first",
+            "short_code": "portfolio",
+        },
+        format="json",
+    )
+
+    second_response = authenticated_client.post(
+        url,
+        data={
+            "destination_url": "https://example.com/second",
+            "short_code": "portfolio",
+        },
+        format="json",
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 400
+    assert second_response.data["short_code"] == (
+        "This custom alias is already in use."
+    )
+
+
+@pytest.mark.django_db
+def test_custom_alias_redirects_to_destination(
+    api_client,
+    user,
+):
+    short_link_create(
+        owner=user,
+        destination_url="https://example.com/portfolio",
+        short_code="my-portfolio",
+    )
+
+    response = api_client.get("/my-portfolio/")
+
+    assert response.status_code == 302
+    assert response.url == "https://example.com/portfolio"

@@ -27,6 +27,59 @@ def short_link_create(
     destination_url: str,
     title: str = "",
     expires_at: datetime | None = None,
+    short_code: str | None = None,
+) -> ShortLink:
+    if short_code is not None:
+        return _short_link_create_with_custom_code(
+            owner=owner,
+            destination_url=destination_url,
+            title=title,
+            expires_at=expires_at,
+            short_code=short_code,
+        )
+    return _short_link_create_with_generated_code(
+        owner=owner,
+        destination_url=destination_url,
+        title=title,
+        expires_at=expires_at,
+    )
+
+
+def _short_link_create_with_custom_code(
+    *,
+    owner: User,
+    destination_url: str,
+    title: str,
+    short_code: str,
+    expires_at: datetime | None = None,
+):
+    try:
+        with transaction.atomic():
+            link = ShortLink.objects.create(
+                owner=owner,
+                destination_url=destination_url,
+                title=title,
+                short_code=short_code,
+                expires_at=expires_at,
+            )
+            transaction.on_commit(
+                lambda custom_short_code=link.short_code: (
+                    short_link_redirect_cache_delete(
+                        short_code=custom_short_code,
+                    )
+                )
+            )
+        return link
+    except IntegrityError as exc:
+        raise ValueError("This custom alias is already in use.") from exc
+
+
+def _short_link_create_with_generated_code(
+    *,
+    owner: User,
+    destination_url: str,
+    title: str = "",
+    expires_at: datetime | None = None,
 ) -> ShortLink:
     for _ in range(MAX_GENERATION_ATTEMPTS):
         short_code = generate_short_code()
