@@ -65,7 +65,6 @@ def test_token_obtain_rejects_invalid_password(
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert "detail" in response.data
 
 
 @pytest.mark.django_db

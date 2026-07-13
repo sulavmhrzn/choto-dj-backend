@@ -129,7 +129,7 @@ def test_user_me_rejects_empty_update(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "non_field_errors" in response.data
+    assert "non_field_errors" in response.data["errors"]
 
 
 @pytest.mark.django_db
@@ -145,4 +145,4 @@ def test_user_me_rejects_invalid_avatar_url(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "avatar_url" in response.data
+    assert "avatar_url" in response.data["errors"]

@@ -239,7 +239,7 @@ def test_duplicate_custom_alias_returns_400(
 
     assert first_response.status_code == 201
     assert second_response.status_code == 400
-    assert second_response.data["short_code"] == (
+    assert second_response.data["errors"]["short_code"] == (
         "This custom alias is already in use."
     )
 

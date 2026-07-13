@@ -109,6 +109,10 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_RENDERER_CLASSES": [
+        "config.api.renderers.StructuredJSONRenderer",
+    ],
+    "EXCEPTION_HANDLER": "config.api.exceptions.structured_exception_handler",
 }
 
 SIMPLET_JWT = {
