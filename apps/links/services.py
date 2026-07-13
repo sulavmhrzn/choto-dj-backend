@@ -5,6 +5,7 @@ from datetime import datetime
 from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
+from apps.links.cache import short_link_redirect_cache_delete
 from apps.links.models import ShortLink
 from apps.links.validators import is_reserved_short_code
 
@@ -34,13 +35,21 @@ def short_link_create(
             continue
         try:
             with transaction.atomic():
-                return ShortLink.objects.create(
+                link = ShortLink.objects.create(
                     owner=owner,
                     short_code=short_code,
                     destination_url=destination_url,
                     title=title,
                     expires_at=expires_at,
                 )
+                transaction.on_commit(
+                    lambda link_short_code=link.short_code: (
+                        short_link_redirect_cache_delete(
+                            short_code=link_short_code,
+                        )
+                    )
+                )
+                return link
         except IntegrityError:
             continue
 
@@ -77,8 +86,11 @@ def short_link_update(
     if update_fields:
         update_fields.append("updated_at")
         link.save(update_fields=update_fields)
+        short_link_redirect_cache_delete(short_code=link.short_code)
     return link
 
 
 def short_link_delete(*, link: ShortLink) -> None:
+    short_code = link.short_code
     link.delete()
+    short_link_redirect_cache_delete(short_code=short_code)

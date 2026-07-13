@@ -162,3 +162,16 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", default="redis://redis:6379/0
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", default="redis://redis:6379/1"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "IGNORE_EXCEPTIONS": True,
+        },
+    },
+}
+
+SHORT_LINK_CACHE_TIMEOUT = os.getenv("SHORT_LINK_CACHE_TIMEOUT", default=300)
