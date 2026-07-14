@@ -18,3 +18,12 @@ RESERVED_SHORT_CODES = {
     "swagger",
     "redoc",
 }
+
+SHORT_LINK_ORDERING_CHOICES = [
+    "created_at",
+    "-created_at",
+    "updated_at",
+    "-updated_at",
+    "title",
+    "-title",
+]

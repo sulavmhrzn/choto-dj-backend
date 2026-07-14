@@ -22,10 +22,12 @@ from apps.links.selectors import (
 )
 from apps.links.serializers import (
     ShortLinkCreateSerializer,
+    ShortLinkListQuerySerializer,
     ShortLinkSerializer,
     ShortLinkUpdateSerializer,
 )
 from apps.links.services import short_link_create, short_link_delete, short_link_update
+from config.api.pagination import DefaultPageNumberPagination
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +38,28 @@ class ShortLinkListCreateAPIView(APIView):
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
 
-        links = short_link_list_for_user(user=user)
-        serializer = ShortLinkSerializer(links, many=True)
+        query_serializer = ShortLinkListQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
 
-        return Response(data=serializer.data, status=status.HTTP_200_OK)
+        links = short_link_list_for_user(
+            user=user,
+            is_active=query_serializer.validated_data.get("is_active"),
+            search=query_serializer.validated_data.get("search"),
+            ordering=query_serializer.validated_data.get("ordering"),
+        )
+
+        paginator = DefaultPageNumberPagination()
+        page = paginator.paginate_queryset(
+            queryset=links,
+            request=request,
+            view=self,
+        )
+
+        serializer = ShortLinkSerializer(page, many=True)
+        return paginator.get_paginated_response(
+            data=serializer.data,
+            message="Short links retrieved successfully",
+        )
 
     def post(self, request: Request) -> Response:
         user = cast(User, request.user)

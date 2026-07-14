@@ -3,7 +3,11 @@ from typing import Any
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.links.constants import MAX_SHORT_CODE_LENGTH, MIN_SHORT_CODE_LENGTH
+from apps.links.constants import (
+    MAX_SHORT_CODE_LENGTH,
+    MIN_SHORT_CODE_LENGTH,
+    SHORT_LINK_ORDERING_CHOICES,
+)
 from apps.links.models import ShortLink
 from apps.links.validators import is_reserved_short_code
 
@@ -92,3 +96,18 @@ class ShortLinkUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("At least one field is required.")
 
         return attrs
+
+
+class ShortLinkListQuerySerializer(serializers.Serializer):
+    is_active = serializers.BooleanField(required=False, default=True)
+    search = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    ordering = serializers.ChoiceField(
+        required=False,
+        default="-created_at",
+        choices=SHORT_LINK_ORDERING_CHOICES,
+    )
+
+    def validate_search(self, value: str) -> str:
+        return value.strip()

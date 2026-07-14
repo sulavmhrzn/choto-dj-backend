@@ -259,3 +259,411 @@ def test_custom_alias_redirects_to_destination(
 
     assert response.status_code == 302
     assert response.url == "https://example.com/portfolio"
+
+
+@pytest.mark.django_db
+def test_short_link_list_is_paginated(
+    authenticated_client,
+    user,
+):
+    for index in range(3):
+        ShortLink.objects.create(
+            owner=user,
+            short_code=f"link{index}",
+            destination_url=f"https://example.com/{index}",
+        )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"page_size": 2},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["success"] is True
+    assert body["data"]["count"] == 3
+    assert len(body["data"]["results"]) == 2
+    assert body["data"]["next"] is not None
+
+
+@pytest.mark.django_db
+def test_short_link_list_filters_active_links(
+    authenticated_client,
+    user,
+):
+    active_link = ShortLink.objects.create(
+        owner=user,
+        short_code="active-link",
+        title="Active link",
+        is_active=True,
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="inactive-link",
+        title="Inactive link",
+        is_active=False,
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"is_active": "true"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(active_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_filters_active_links(
+    authenticated_client,
+    user,
+):
+    active_link = ShortLink.objects.create(
+        owner=user,
+        short_code="active-link",
+        title="Active link",
+        is_active=True,
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="inactive-link",
+        title="Inactive link",
+        is_active=False,
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"is_active": "true"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(active_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_filters_inactive_links(
+    authenticated_client,
+    user,
+):
+    ShortLink.objects.create(
+        owner=user,
+        short_code="active-link",
+        title="Active link",
+        is_active=True,
+    )
+    inactive_link = ShortLink.objects.create(
+        owner=user,
+        short_code="inactive-link",
+        title="Inactive link",
+        is_active=False,
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"is_active": "false"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(inactive_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_searches_by_title(
+    authenticated_client,
+    user,
+):
+    matching_link = ShortLink.objects.create(
+        owner=user,
+        short_code="portfolio",
+        title="My Developer Portfolio",
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="documentation",
+        title="Project documentation",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"search": "developer"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(matching_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_searches_by_short_code(
+    authenticated_client,
+    user,
+):
+    matching_link = ShortLink.objects.create(
+        owner=user,
+        short_code="github-profile",
+        title="Profile",
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="portfolio",
+        title="Portfolio",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"search": "github"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(matching_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_searches_by_destination_url(
+    authenticated_client,
+    user,
+):
+    matching_link = ShortLink.objects.create(
+        owner=user,
+        short_code="django-docs",
+        title="Documentation",
+        destination_url="https://docs.djangoproject.com/",
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="python-docs",
+        title="Python",
+        destination_url="https://docs.python.org/",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"search": "djangoproject"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(matching_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_search_is_case_insensitive(
+    authenticated_client,
+    user,
+):
+    matching_link = ShortLink.objects.create(
+        owner=user,
+        short_code="portfolio",
+        title="Developer Portfolio",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"search": "DEVELOPER"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["data"]["count"] == 1
+    assert body["data"]["results"][0]["id"] == str(matching_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_list_orders_by_title(
+    authenticated_client,
+    user,
+):
+    ShortLink.objects.create(
+        owner=user,
+        short_code="z-link",
+        title="Zulu",
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="a-link",
+        title="Alpha",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"ordering": "title"},
+    )
+
+    assert response.status_code == 200
+
+    results = response.json()["data"]["results"]
+
+    assert [result["title"] for result in results] == [
+        "Alpha",
+        "Zulu",
+    ]
+
+
+@pytest.mark.django_db
+def test_short_link_list_orders_by_title_descending(
+    authenticated_client,
+    user,
+):
+    ShortLink.objects.create(
+        owner=user,
+        short_code="a-link",
+        title="Alpha",
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="z-link",
+        title="Zulu",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"ordering": "-title"},
+    )
+
+    assert response.status_code == 200
+
+    results = response.json()["data"]["results"]
+
+    assert [result["title"] for result in results] == [
+        "Zulu",
+        "Alpha",
+    ]
+
+
+@pytest.mark.django_db
+def test_short_link_list_rejects_invalid_ordering(
+    authenticated_client,
+):
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"ordering": "owner"},
+    )
+
+    assert response.status_code == 400
+
+    body = response.json()
+
+    assert body["success"] is False
+    assert body["data"] is None
+    assert "ordering" in body["errors"]
+
+
+@pytest.mark.django_db
+def test_short_link_list_rejects_invalid_is_active_value(
+    authenticated_client,
+):
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"is_active": "sometimes"},
+    )
+
+    assert response.status_code == 400
+
+    body = response.json()
+
+    assert body["success"] is False
+    assert "is_active" in body["errors"]
+
+
+@pytest.mark.django_db
+def test_short_link_list_combines_search_and_active_filter(
+    authenticated_client,
+    user,
+):
+    matching_link = ShortLink.objects.create(
+        owner=user,
+        short_code="active-portfolio",
+        title="Portfolio",
+        is_active=True,
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="inactive-portfolio",
+        title="Portfolio",
+        is_active=False,
+    )
+    ShortLink.objects.create(
+        owner=user,
+        short_code="active-docs",
+        title="Documentation",
+        is_active=True,
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {
+            "search": "portfolio",
+            "is_active": "true",
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(matching_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_filters_do_not_include_another_users_links(
+    authenticated_client,
+    user,
+    another_user,
+):
+    own_link = ShortLink.objects.create(
+        owner=user,
+        short_code="my-portfolio",
+        title="Portfolio",
+    )
+    ShortLink.objects.create(
+        owner=another_user,
+        short_code="other-portfolio",
+        title="Portfolio",
+    )
+
+    response = authenticated_client.get(
+        reverse("links:list-create"),
+        {"search": "portfolio"},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    results = body["data"]["results"]
+
+    assert body["data"]["count"] == 1
+    assert results[0]["id"] == str(own_link.id)

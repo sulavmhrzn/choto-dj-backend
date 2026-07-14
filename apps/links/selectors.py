@@ -1,9 +1,10 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from django.core.cache import cache
 from django.db import models
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -13,9 +14,34 @@ from apps.links.types import RedirectableShortLink
 
 _CACHE_MISS = "__missing__"
 
+ShortLinkOrdering = Literal[
+    "created_at",
+    "-created_at",
+    "updated_at",
+    "-updated_at",
+    "title",
+    "-title",
+]
 
-def short_link_list_for_user(*, user: User) -> QuerySet[ShortLink]:
-    return ShortLink.objects.filter(owner=user)
+
+def short_link_list_for_user(
+    *,
+    user: User,
+    is_active: bool | None = None,
+    search: str = "",
+    ordering: ShortLinkOrdering = "-created_at",
+) -> QuerySet[ShortLink]:
+    queryset = ShortLink.objects.filter(owner=user)
+    if is_active is not None:
+        queryset = queryset.filter(is_active=is_active)
+
+    if search:
+        queryset = queryset.filter(
+            Q(title__icontains=search)
+            | Q(short_code__icontains=search)
+            | Q(destination_url__icontains=search)
+        )
+    return queryset.order_by(ordering)
 
 
 def short_link_get_for_user(*, user: User, link_id: UUID | str) -> ShortLink | None:

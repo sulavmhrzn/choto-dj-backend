@@ -113,6 +113,7 @@ REST_FRAMEWORK = {
         "config.api.renderers.StructuredJSONRenderer",
     ],
     "EXCEPTION_HANDLER": "config.api.exceptions.structured_exception_handler",
+    "DEFAULT_PAGINATION_CLASS": "config.api.pagination.DefaultPageNumberPagination",
 }
 
 SIMPLET_JWT = {
