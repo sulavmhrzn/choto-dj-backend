@@ -52,7 +52,13 @@ class ShortLinkAnalyticsAPIView(APIView):
             data={
                 "total_clicks": summary["total_clicks"],
                 "clicks_today": summary["clicks_since"],
-                "recent_clicks": ClickEventSerializer(recent_clicks, many=True).data,
+                "unique_visitors": summary["unqiue_visitors"],
+                "first_clicked_at": summary["first_clicked_at"],
+                "last_clicked_at": summary["last_clicked_at"],
+                "recent_clicks": ClickEventSerializer(
+                    recent_clicks,
+                    many=True,
+                ).data,
             },
             status=status.HTTP_200_OK,
         )

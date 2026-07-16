@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.urls import reverse
@@ -69,11 +69,16 @@ def test_link_analytics_returns_summary(
     old_click = ClickEvent.objects.create(
         short_link=short_link,
         referrer="https://example.com",
+        ip_address="127.0.0.2",
     )
 
+    old_clicked_at = timezone.now() - timedelta(days=2)
+
     ClickEvent.objects.filter(id=old_click.id).update(
-        clicked_at=timezone.now() - timedelta(days=2)
+        clicked_at=old_clicked_at,
     )
+
+    old_click.refresh_from_db()
 
     response = authenticated_client.get(
         reverse(
@@ -83,8 +88,15 @@ def test_link_analytics_returns_summary(
     )
 
     assert response.status_code == status.HTTP_200_OK
+
     assert response.data["total_clicks"] == 2
     assert response.data["clicks_today"] == 1
+    assert response.data["unique_visitors"] == 2
+
+    assert response.data["first_clicked_at"] == old_click.clicked_at
+
+    assert response.data["last_clicked_at"] == recent_click.clicked_at
+
     assert len(response.data["recent_clicks"]) == 2
 
     first_click = response.data["recent_clicks"][0]
@@ -149,5 +161,42 @@ def test_link_analytics_returns_zero_when_no_clicks(
     assert response.data == {
         "total_clicks": 0,
         "clicks_today": 0,
+        "unique_visitors": 0,
+        "first_clicked_at": None,
+        "last_clicked_at": None,
         "recent_clicks": [],
     }
+
+
+@pytest.mark.django_db
+def test_link_analytics_counts_distinct_non_null_ip_addresses(
+    authenticated_client: APIClient,
+    short_link: ShortLink,
+) -> None:
+    ClickEvent.objects.create(
+        short_link=short_link,
+        ip_address="127.0.0.1",
+    )
+    ClickEvent.objects.create(
+        short_link=short_link,
+        ip_address="127.0.0.1",
+    )
+    ClickEvent.objects.create(
+        short_link=short_link,
+        ip_address="127.0.0.2",
+    )
+    ClickEvent.objects.create(
+        short_link=short_link,
+        ip_address=None,
+    )
+
+    response = authenticated_client.get(
+        reverse(
+            "analytics:short-link",
+            kwargs={"link_id": short_link.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["total_clicks"] == 4
+    assert response.data["unique_visitors"] == 2
