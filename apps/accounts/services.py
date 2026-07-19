@@ -1,10 +1,13 @@
 from typing import Any
 
+import structlog
 from django.db import transaction
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.accounts.selectors import user_get_by_email
+
+logger = structlog.getLogger()
 
 
 @transaction.atomic
@@ -19,6 +22,7 @@ def user_create(
     existing_user = user_get_by_email(email=email)
 
     if existing_user is not None:
+        logger.warning("user_already_exists", email=email)
         raise ValueError("User with this email already exists")
 
     user = User.objects.create_user(
@@ -28,6 +32,7 @@ def user_create(
         avatar_url=avatar_url,
         **extra_fields,
     )
+    logger.info("user_created", email=email, created_at=user.created_at)
     return user
 
 
@@ -53,23 +58,30 @@ def user_update_profile(
     update_fields.append("updated_at")
     user.save(update_fields=update_fields)
 
+    logger.info("user_updated", update_fields=update_fields)
     return user
 
 
 def user_deactivate(*, user: User) -> User:
     user.is_active = False
     user.save(update_fields=["is_active", "updated_at"])
+
+    logger.info("user_deactivated", email=user.email, updated_at=user.updated_at)
     return user
 
 
 def user_activate(*, user: User) -> User:
     user.is_active = True
     user.save(update_fields=["is_active", "updated_at"])
+
+    logger.info("user_activated", email=user.email, updated_at=user.updated_at)
     return user
 
 
 def token_issue_for_user(*, user: User) -> dict[str, str]:
     refresh = RefreshToken.for_user(user)
+
+    logger.info("token_issued", email=user.email)
     return {
         "refresh": str(refresh),
         "access": str(refresh.access_token),

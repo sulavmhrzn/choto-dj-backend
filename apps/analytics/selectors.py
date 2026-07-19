@@ -32,7 +32,7 @@ def click_event_summary_for_link(
     return {
         "total_clicks": result["total_clicks"],
         "clicks_since": result["clicks_since"],
-        "unqiue_visitors": result["unique_visitors"],
+        "unique_visitors": result["unique_visitors"],
         "first_clicked_at": result["first_clicked_at"],
         "last_clicked_at": result["last_clicked_at"],
     }

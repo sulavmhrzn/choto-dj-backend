@@ -1,7 +1,7 @@
-import logging
 from typing import cast
 from uuid import UUID
 
+import structlog
 from django.shortcuts import redirect
 from rest_framework import status
 from rest_framework.exceptions import NotFound, ValidationError
@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
-from apps.analytics.services import click_event_create
 from apps.analytics.tasks import click_event_create_task
 from apps.analytics.utils import get_client_ip
 from apps.links.models import ShortLink
@@ -29,7 +28,7 @@ from apps.links.serializers import (
 from apps.links.services import short_link_create, short_link_delete, short_link_update
 from config.api.pagination import DefaultPageNumberPagination
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger()
 
 
 class ShortLinkListCreateAPIView(APIView):
@@ -145,11 +144,12 @@ class ShortLinkRedirectAPIView(APIView):
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 ip_address=get_client_ip(request=request),
             )
+
         except Exception:  # noqa
             logger.exception(
-                "Failed to dispatch click event task for short link %s.",
-                link.id,
-                exc_info=True,
+                "click_event_dispatch_failed",
+                short_link_id=str(link.id),
+                destination_url=link.destination_url,
             )
 
         return redirect(to=link.destination_url, permanent=False)

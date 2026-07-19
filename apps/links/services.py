@@ -2,6 +2,7 @@ import secrets
 import string
 from datetime import datetime
 
+import structlog
 from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
@@ -12,6 +13,8 @@ from apps.links.validators import is_reserved_short_code
 SHORT_CODE_ALPHABETS = string.ascii_letters + string.digits
 DEFAULT_SHORT_CODE_LENGTH = 7
 MAX_GENERATION_ATTEMPTS = 5
+
+logger = structlog.getLogger()
 
 
 def generate_short_code(
@@ -69,8 +72,20 @@ def _short_link_create_with_custom_code(
                     )
                 )
             )
+            logger.info(
+                "short_link_created",
+                short_link_id=str(link.id),
+                owner_id=str(link.owner.id),
+                short_code=link.short_code,
+                has_custom_alias=True,
+            )
         return link
     except IntegrityError as exc:
+        logger.warning(
+            "short_link_custom_alias_conflict",
+            short_code=short_code,
+            owner_id=str(owner.id),
+        )
         raise ValueError("This custom alias is already in use.") from exc
 
 
@@ -81,10 +96,15 @@ def _short_link_create_with_generated_code(
     title: str = "",
     expires_at: datetime | None = None,
 ) -> ShortLink:
-    for _ in range(MAX_GENERATION_ATTEMPTS):
+    for attempt in range(1, MAX_GENERATION_ATTEMPTS + 1):
         short_code = generate_short_code()
 
         if is_reserved_short_code(short_code=short_code):
+            logger.debug(
+                "short_link_generated_code_reserved",
+                short_code=short_code,
+                attempt=attempt,
+            )
             continue
         try:
             with transaction.atomic():
@@ -102,10 +122,27 @@ def _short_link_create_with_generated_code(
                         )
                     )
                 )
+                logger.info(
+                    "short_link_created",
+                    short_link_id=str(link.id),
+                    owner_id=str(link.owner.id),
+                    short_code=link.short_code,
+                    has_custom_alias=False,
+                )
                 return link
         except IntegrityError:
+            logger.debug(
+                "short_link_generated_code_collison",
+                short_code=short_code,
+                attempt=attempt,
+            )
             continue
 
+    logger.error(
+        "short_link_generated_code_exhausted",
+        owner_id=str(owner.id),
+        max_generation=MAX_GENERATION_ATTEMPTS,
+    )
     raise RuntimeError("Could not generate a unique short code.")
 
 
@@ -139,6 +176,14 @@ def short_link_update(
     if update_fields:
         update_fields.append("updated_at")
         link.save(update_fields=update_fields)
+        logger.info(
+            "short_link_updated",
+            short_link_id=str(link.id),
+            short_code=link.short_code,
+            owner_id=str(link.owner.id),
+            update_fields=update_fields,
+        )
+
         short_link_redirect_cache_delete(short_code=link.short_code)
     return link
 
@@ -146,4 +191,6 @@ def short_link_update(
 def short_link_delete(*, link: ShortLink) -> None:
     short_code = link.short_code
     link.delete()
+    logger.info("short_link_deleted", short_code=short_code)
+
     short_link_redirect_cache_delete(short_code=short_code)
