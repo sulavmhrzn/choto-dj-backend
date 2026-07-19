@@ -1,15 +1,35 @@
 from datetime import timedelta
 
 import pytest
+from django.conf import settings
+from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.links.models import ShortLink
 from apps.links.services import short_link_create
+
+TEST_CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "choto-tests",
+    }
+}
+
+
+@pytest.fixture(autouse=True)
+def use_test_cache(settings):
+    settings.CACHES = TEST_CACHES
+    settings.SHORT_LINK_CACHE_TIMEOUT = 300
+
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture
@@ -667,3 +687,46 @@ def test_short_link_filters_do_not_include_another_users_links(
 
     assert body["data"]["count"] == 1
     assert results[0]["id"] == str(own_link.id)
+
+
+@pytest.mark.django_db
+def test_short_link_creation_is_throttled(
+    authenticated_client: APIClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        ScopedRateThrottle,
+        "THROTTLE_RATES",
+        {
+            **ScopedRateThrottle.THROTTLE_RATES,
+            "short_link_create": "2/minute",
+        },
+    )
+    url = reverse("links:list-create")
+
+    payloads = [
+        {"destination_url": "https://example.com/1"},
+        {"destination_url": "https://example.com/2"},
+        {"destination_url": "https://example.com/3"},
+    ]
+
+    first_response = authenticated_client.post(url, payloads[0], format="json")
+    second_response = authenticated_client.post(url, payloads[1], format="json")
+    third_response = authenticated_client.post(url, payloads[2], format="json")
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+    assert second_response.status_code == status.HTTP_201_CREATED
+    assert third_response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert third_response.data["success"] is False
+    assert "Retry-After" in third_response
+
+
+@pytest.mark.django_db
+def test_short_link_list_is_not_affected_by_creation_throttle(
+    authenticated_client: APIClient,
+) -> None:
+    url = reverse("links:list-create")
+
+    for _ in range(3):
+        response = authenticated_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK

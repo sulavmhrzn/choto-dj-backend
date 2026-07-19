@@ -118,6 +118,12 @@ REST_FRAMEWORK = {
     ],
     "EXCEPTION_HANDLER": "config.api.exceptions.structured_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "config.api.pagination.DefaultPageNumberPagination",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "short_link_create": "30/hour",
+    },
 }
 
 SIMPLET_JWT = {

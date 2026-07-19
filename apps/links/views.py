@@ -8,6 +8,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle, BaseThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
@@ -33,6 +34,12 @@ logger = structlog.getLogger()
 
 class ShortLinkListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get_throttles(self) -> list[BaseThrottle]:
+        if self.request.method == "POST":
+            self.throttle_scope = "short_link_create"
+            return [ScopedRateThrottle()]
+        return []
 
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)

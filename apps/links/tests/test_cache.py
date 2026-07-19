@@ -1,11 +1,7 @@
-from datetime import timedelta
-
 import pytest
 from django.core.cache import cache
-from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.links.cache import short_link_redirect_cache_key
 from apps.links.models import ShortLink
 from apps.links.selectors import short_link_get_redirectable_by_code
 from apps.links.services import short_link_create, short_link_delete, short_link_update
