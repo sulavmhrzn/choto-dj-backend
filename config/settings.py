@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.links",
     "apps.analytics",
+    "apps.core",
 ]
 
 MIDDLEWARE = [
