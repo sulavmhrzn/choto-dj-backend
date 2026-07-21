@@ -1,10 +1,31 @@
+from sys import thread_info
+
 import pytest
+from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
+
+TEST_CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "choto-tests",
+    }
+}
+
+
+@pytest.fixture(autouse=True)
+def use_test_cache(settings):
+    settings.CACHES = TEST_CACHES
+    settings.SHORT_LINK_CACHE_TIMEOUT = 300
+
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture
@@ -146,3 +167,111 @@ def test_user_me_rejects_invalid_avatar_url(
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "avatar_url" in response.data["errors"]
+
+
+@pytest.mark.django_db
+def test_login_is_throttled_after_repeated_failed_attempts(
+    api_client,
+    user,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        ScopedRateThrottle,
+        "THROTTLE_RATES",
+        {
+            **ScopedRateThrottle.THROTTLE_RATES,
+            "login": "2/minute",
+        },
+    )
+
+    payload = {
+        "email": user.email,
+        "password": "incorrect-password",
+    }
+
+    first_response = api_client.post(
+        "/api/v1/auth/token/",
+        payload,
+        format="json",
+    )
+    second_response = api_client.post(
+        "/api/v1/auth/token/",
+        payload,
+        format="json",
+    )
+    third_response = api_client.post(
+        "/api/v1/auth/token/",
+        payload,
+        format="json",
+    )
+
+    assert first_response.status_code == 401
+    assert second_response.status_code == 401
+    assert third_response.status_code == 429
+    assert "Retry-After" in third_response.headers
+
+
+@pytest.mark.django_db
+def test_google_oauth_token_endpoint_is_throttled(
+    api_client,
+    user,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        ScopedRateThrottle,
+        "THROTTLE_RATES",
+        {
+            **ScopedRateThrottle.THROTTLE_RATES,
+            "google_oauth_token": "2/minute",
+        },
+    )
+
+    api_client.force_login(user)
+
+    first_response = api_client.get(
+        "/api/v1/accounts/oauth/google/token/",
+    )
+    second_response = api_client.get(
+        "/api/v1/accounts/oauth/google/token/",
+    )
+    third_response = api_client.get(
+        "/api/v1/accounts/oauth/google/token/",
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert third_response.status_code == 429
+
+    assert "Retry-After" in third_response.headers
+    assert third_response.data["success"] is False
+
+    assert "access" in first_response.data
+    assert "refresh" in first_response.data
+    assert "user" in first_response.data
+
+
+@pytest.mark.django_db
+def test_refresh_token_endpoint_is_throttled(authenticated_client, monkeypatch, user):
+    monkeypatch.setattr(
+        ScopedRateThrottle,
+        "THROTTLE_RATES",
+        {
+            **ScopedRateThrottle.THROTTLE_RATES,
+            "token_refresh": "2/minute",
+        },
+    )
+    refresh_token = RefreshToken.for_user(user)
+    payload = {"refresh": refresh_token}
+
+    first_response = authenticated_client.post("/api/v1/auth/token/refresh/", payload)
+
+    second_response = authenticated_client.post("/api/v1/auth/token/refresh/", payload)
+
+    third_response = authenticated_client.post("/api/v1/auth/token/refresh/", payload)
+
+    assert third_response.status_code == 429
+    assert "Retry-After" in third_response.headers
+    assert third_response.data["success"] is False
+
+    assert "access" in first_response.data
+    assert "access" in second_response.data

@@ -5,7 +5,7 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 
-from apps.accounts.views import CustomTokenObtainPairAPIView
+from apps.accounts.views import CustomTokenObtainPairAPIView, CustomTokenRefreshAPIView
 from apps.links.views import ShortLinkRedirectAPIView
 
 urlpatterns = [
@@ -20,7 +20,7 @@ urlpatterns = [
         name="token_obtain_pair",
     ),
     path(
-        "api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"
+        "api/v1/auth/token/refresh/", CustomTokenRefreshAPIView.as_view(), name="token_refresh"
     ),
     path("api/v1/auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/", include("allauth.urls")),

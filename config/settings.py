@@ -123,6 +123,9 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "short_link_create": "30/hour",
+        "login": "10/minute",
+        "google_oauth_token": "10/minute",
+        "token_refresh": "30/minute",
     },
 }
 
