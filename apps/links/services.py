@@ -7,6 +7,7 @@ from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
 from apps.links.cache import short_link_redirect_cache_delete
+from apps.links.metrics import short_links_created_total
 from apps.links.models import ShortLink
 from apps.links.validators import is_reserved_short_code
 
@@ -48,6 +49,13 @@ def short_link_create(
     )
 
 
+def _handle_short_link_created(*, short_code):
+    short_link_redirect_cache_delete(
+        short_code=short_code,
+    )
+    short_links_created_total.inc()
+
+
 def _short_link_create_with_custom_code(
     *,
     owner: User,
@@ -66,10 +74,8 @@ def _short_link_create_with_custom_code(
                 expires_at=expires_at,
             )
             transaction.on_commit(
-                lambda custom_short_code=link.short_code: (
-                    short_link_redirect_cache_delete(
-                        short_code=custom_short_code,
-                    )
+                lambda short_code=link.short_code: _handle_short_link_created(
+                    short_code=short_code
                 )
             )
             logger.info(
@@ -116,10 +122,8 @@ def _short_link_create_with_generated_code(
                     expires_at=expires_at,
                 )
                 transaction.on_commit(
-                    lambda link_short_code=link.short_code: (
-                        short_link_redirect_cache_delete(
-                            short_code=link_short_code,
-                        )
+                    lambda short_code=link.short_code: _handle_short_link_created(
+                        short_code=short_code
                     )
                 )
                 logger.info(

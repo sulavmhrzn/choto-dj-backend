@@ -11,6 +11,7 @@ from apps.links.views import ShortLinkRedirectAPIView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.core.urls")),
+    path("prometheus/", include("django_prometheus.urls")),
     path("api/v1/accounts/", include("apps.accounts.urls")),
     path("api/v1/links/", include("apps.links.urls")),
     path("api/v1/analytics/", include("apps.analytics.urls")),
@@ -20,7 +21,9 @@ urlpatterns = [
         name="token_obtain_pair",
     ),
     path(
-        "api/v1/auth/token/refresh/", CustomTokenRefreshAPIView.as_view(), name="token_refresh"
+        "api/v1/auth/token/refresh/",
+        CustomTokenRefreshAPIView.as_view(),
+        name="token_refresh",
     ),
     path("api/v1/auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/", include("allauth.urls")),
