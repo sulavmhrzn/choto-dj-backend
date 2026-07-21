@@ -1,6 +1,8 @@
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
+from _pytest import outcomes
 from django.conf import settings
 from django.core.cache import cache
 from django.urls import reverse
@@ -11,6 +13,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
+from apps.links import views
 from apps.links.models import ShortLink
 from apps.links.services import short_link_create
 
@@ -730,3 +733,82 @@ def test_short_link_list_is_not_affected_by_creation_throttle(
         response = authenticated_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_redirect_increments_success_metric(
+    api_client,
+    user,
+    monkeypatch,
+):
+    labels_mock = Mock()
+    increment_mock = Mock()
+    labels_mock.return_value.inc = increment_mock
+
+    monkeypatch.setattr(
+        views.short_link_redirects_total,
+        "labels",
+        labels_mock,
+    )
+    short_link = short_link_create(
+        owner=user, destination_url="https://example.com", title="example"
+    )
+
+    responses = api_client.get(f"/{short_link.short_code}/")
+
+    assert responses.status_code == 302
+    labels_mock.assert_called_once_with(outcome="success")
+    increment_mock.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_redirect_increments_not_found_metric(
+    api_client,
+    monkeypatch,
+):
+    labels_mock = Mock()
+    increment_mock = Mock()
+    labels_mock.return_value.inc = increment_mock
+
+    monkeypatch.setattr(
+        views.short_link_redirects_total,
+        "labels",
+        labels_mock,
+    )
+
+    response = api_client.get("/missing-code/")
+
+    assert response.status_code == 404
+    labels_mock.assert_called_once_with(outcome="not_found")
+    increment_mock.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_redirect_increments_click_dispatch_success_metric(
+    api_client,
+    user,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        views.click_event_create_task,
+        "delay",
+        Mock(),
+    )
+
+    labels_mock = Mock()
+    increment_mock = Mock()
+    labels_mock.return_value.inc = increment_mock
+
+    monkeypatch.setattr(
+        views.click_event_dispatch_total,
+        "labels",
+        labels_mock,
+    )
+    short_link = short_link_create(
+        owner=user, destination_url="https://example.com", title="example"
+    )
+    response = api_client.get(f"/{short_link.short_code}/")
+
+    assert response.status_code == 302
+    labels_mock.assert_called_once_with(outcome="success")
+    increment_mock.assert_called_once_with()

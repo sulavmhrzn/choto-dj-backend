@@ -12,8 +12,10 @@ from rest_framework.throttling import BaseThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
+from apps.analytics.metrics import click_event_dispatch_total
 from apps.analytics.tasks import click_event_create_task
 from apps.analytics.utils import get_client_ip
+from apps.links.metrics import short_link_redirects_total
 from apps.links.models import ShortLink
 from apps.links.selectors import (
     short_link_get_for_user,
@@ -142,8 +144,10 @@ class ShortLinkRedirectAPIView(APIView):
     def get(self, request: Request, short_code: str):
         link = short_link_get_redirectable_by_code(short_code=short_code)
         if link is None:
+            short_link_redirects_total.labels(outcome="not_found").inc()
             raise NotFound("Short link not found.")
 
+        short_link_redirects_total.labels(outcome="success").inc()
         try:
             click_event_create_task.delay(
                 short_link_id=str(link.id),
@@ -151,8 +155,9 @@ class ShortLinkRedirectAPIView(APIView):
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 ip_address=get_client_ip(request=request),
             )
-
+            click_event_dispatch_total.labels(outcome="success").inc()
         except Exception:  # noqa
+            click_event_dispatch_total.labels(outcome="failure").inc()
             logger.exception(
                 "click_event_dispatch_failed",
                 short_link_id=str(link.id),
