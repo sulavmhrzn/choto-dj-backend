@@ -61,3 +61,11 @@ def api_key_list_for_user(*, user: User) -> QuerySet[APIKey]:
 
 def api_key_get_for_user(*, user: User, api_key_id: UUID) -> APIKey | None:
     return APIKey.objects.filter(id=api_key_id, owner=user).first()
+
+
+def api_key_get_active_by_prefix(*, prefix: str) -> APIKey | None:
+    return (
+        APIKey.objects.select_related("owner")
+        .filter(prefix=prefix, is_active=True)
+        .first()
+    )

@@ -146,3 +146,10 @@ def api_key_revoke(*, api_key: APIKey) -> APIKey:
     api_key.save(update_fields=["is_active", "revoked_at"])
 
     return api_key
+
+
+def api_key_mark_used(*, api_key: APIKey) -> None:
+    used_at = timezone.now()
+
+    APIKey.objects.filter(id=api_key.id).update(last_used_at=timezone.now())
+    api_key.last_used_at = used_at

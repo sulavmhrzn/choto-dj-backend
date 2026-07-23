@@ -9,6 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.accounts.models import User
@@ -89,6 +90,7 @@ class GoogleOAuthTokenAPIView(APIView):
 
 
 class APIKeyListCreateAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request: Request) -> Response:
@@ -116,6 +118,7 @@ class APIKeyListCreateAPIView(APIView):
 
 
 class APIKeyRevokeAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request: Request, api_key_id: UUID) -> Response:

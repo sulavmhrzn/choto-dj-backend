@@ -97,4 +97,68 @@ class UserAdmin(BaseUserAdmin):
 
 
 @admin.register(APIKey)
-class APIKeyAdmin(admin.ModelAdmin): ...
+class APIKeyAdmin(admin.ModelAdmin):
+    list_display = [
+        "name",
+        "owner",
+        "prefix",
+        "is_active",
+        "last_used_at",
+        "created_at",
+        "revoked_at",
+    ]
+    list_filter = [
+        "is_active",
+        "created_at",
+        "revoked_at",
+    ]
+    search_fields = [
+        "name",
+        "prefix",
+        "owner__email",
+    ]
+    ordering = [
+        "-created_at",
+    ]
+    readonly_fields = [
+        "id",
+        "owner",
+        "prefix",
+        "hashed_secret",
+        "last_used_at",
+        "created_at",
+        "revoked_at",
+    ]
+
+    fieldsets = [
+        (
+            None,
+            {
+                "fields": [
+                    "id",
+                    "owner",
+                    "name",
+                    "prefix",
+                    "is_active",
+                ]
+            },
+        ),
+        (
+            "Security",
+            {
+                "fields": [
+                    "hashed_secret",
+                ]
+            },
+        ),
+        (
+            "Usage",
+            {
+                "fields": [
+                    "last_used_at",
+                    "created_at",
+                    "revoked_at",
+                ]
+            },
+        ),
+    ]

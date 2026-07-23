@@ -5,11 +5,13 @@ import pytest
 from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.accounts.authentication import APIKeyAuthentication
 from apps.accounts.models import APIKey, User
+from apps.accounts.services import api_key_create
 
 TEST_CACHES = {
     "default": {
@@ -591,3 +593,202 @@ def test_api_key_revoke_endpoint_is_idempotent(
     assert first_response.status_code == status.HTTP_200_OK
     assert second_response.status_code == status.HTTP_200_OK
     assert api_key.revoked_at == original_revoked_at
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_authenticate_user(api_client, user):
+    created_api_key = api_key_create(owner=user, name="Test CLI")
+
+    response = api_client.get(
+        reverse("accounts:me"), HTTP_AUTHORIZATION=f"Api-Key {created_api_key.secret}"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["email"] == user.email
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_rejects_incorrect_secret(
+    api_client,
+    user,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Test CLI",
+    )
+
+    invalid_key = f"choto_{created_api_key.api_key.prefix}.incorrect-secret"
+
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=f"Api-Key {invalid_key}",
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_rejects_unknown_prefix(
+    api_client,
+) -> None:
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=("Api-Key choto_unknown12345.some-secret"),
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_rejects_revoked_key(
+    api_client,
+    user,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Revoked key",
+    )
+
+    APIKey.objects.filter(
+        id=created_api_key.api_key.id,
+    ).update(
+        is_active=False,
+    )
+
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=(f"Api-Key {created_api_key.secret}"),
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "invalid",
+        "choto_missingseparator",
+        "choto_.secret",
+        "choto_prefix.",
+    ],
+)
+def test_api_key_authentication_rejects_malformed_credentials(
+    api_client,
+    credential,
+) -> None:
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=f"Api-Key {credential}",
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_jwt_authentication_still_works_with_api_key_authentication_enabled(
+    authenticated_client,
+) -> None:
+    response = authenticated_client.get(
+        reverse("accounts:me"),
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_updates_last_used_at(
+    api_client,
+    user,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Test CLI",
+    )
+
+    assert created_api_key.api_key.last_used_at is None
+
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=f"Api-Key {created_api_key.secret}",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    created_api_key.api_key.refresh_from_db()
+
+    assert created_api_key.api_key.last_used_at is not None
+
+
+@pytest.mark.django_db
+def test_invalid_api_key_does_not_update_last_used_at(
+    api_client,
+    user,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Test CLI",
+    )
+
+    invalid_key = f"choto_{created_api_key.api_key.prefix}.wrong-secret"
+
+    response = api_client.get(
+        reverse("accounts:me"),
+        HTTP_AUTHORIZATION=f"Api-Key {invalid_key}",
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    created_api_key.api_key.refresh_from_db()
+
+    assert created_api_key.api_key.last_used_at is None
+
+
+@pytest.mark.django_db
+def test_api_key_authentication_returns_user_and_api_key(
+    user: User,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Test CLI",
+    )
+
+    request = APIRequestFactory().get(
+        "/api/v1/accounts/me/",
+        HTTP_AUTHORIZATION=f"Api-Key {created_api_key.secret}",
+    )
+
+    authentication = APIKeyAuthentication()
+
+    result = authentication.authenticate(request)
+
+    assert result is not None
+
+    authenticated_user, authentication_value = result
+
+    assert authenticated_user == user
+    assert authentication_value == created_api_key.api_key
+    assert isinstance(authentication_value, APIKey)
+
+
+@pytest.mark.django_db
+def test_api_key_cannot_create_another_api_key(
+    api_client,
+    user,
+) -> None:
+    created_api_key = api_key_create(
+        owner=user,
+        name="Existing key",
+    )
+
+    response = api_client.post(
+        reverse("accounts:api-key-list-create"),
+        data={
+            "name": "Nested key",
+        },
+        format="json",
+        HTTP_AUTHORIZATION=f"Api-Key {created_api_key.secret}",
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert APIKey.objects.filter(owner=user).count() == 1

@@ -7,3 +7,9 @@ from apps.accounts.models import APIKey
 class CreatedAPIKey:
     api_key: APIKey
     secret: str
+
+
+@dataclass(frozen=True)
+class ParsedAPIKey:
+    prefix: str
+    secret: str
