@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import TypedDict
 
 
@@ -8,3 +8,8 @@ class ClickEventSummary(TypedDict):
     unique_visitors: int
     first_clicked_at: datetime | None
     last_clicked_at: datetime | None
+
+
+class DailyClickCount(TypedDict):
+    date: date
+    clicks: int

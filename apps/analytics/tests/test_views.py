@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 from django.urls import reverse
@@ -158,14 +158,26 @@ def test_link_analytics_returns_zero_when_no_clicks(
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.data == {
-        "total_clicks": 0,
-        "clicks_today": 0,
-        "unique_visitors": 0,
-        "first_clicked_at": None,
-        "last_clicked_at": None,
-        "recent_clicks": [],
+    assert response.data["total_clicks"] == 0
+    assert response.data["clicks_today"] == 0
+    assert response.data["unique_visitors"] == 0
+    assert response.data["first_clicked_at"] is None
+    assert response.data["last_clicked_at"] is None
+    assert response.data["recent_clicks"] == []
+
+    clicks_over_time = response.data["clicks_over_time"]
+
+    assert len(clicks_over_time) == 30
+
+    assert clicks_over_time[0] == {
+        "date": timezone.localdate() - timedelta(days=29),
+        "clicks": 0,
     }
+    assert clicks_over_time[-1] == {
+        "date": timezone.localdate(),
+        "clicks": 0,
+    }
+    assert all(item["clicks"] == 0 for item in clicks_over_time)
 
 
 @pytest.mark.django_db
@@ -200,3 +212,42 @@ def test_link_analytics_counts_distinct_non_null_ip_addresses(
     assert response.status_code == status.HTTP_200_OK
     assert response.data["total_clicks"] == 4
     assert response.data["unique_visitors"] == 2
+
+
+@pytest.mark.django_db
+def test_link_analytics_returns_clicks_over_time(authenticated_client, short_link):
+    today = timezone.localdate()
+    first_date = today - timedelta(days=2)
+    second_date = today - timedelta(days=1)
+
+    first_timestamp = timezone.make_aware(datetime.combine(first_date, time(hour=12)))
+    second_timestamp = timezone.make_aware(datetime.combine(second_date, time(hour=12)))
+
+    first_click = ClickEvent.objects.create(short_link=short_link)
+    second_click = ClickEvent.objects.create(short_link=short_link)
+    third_click = ClickEvent.objects.create(short_link=short_link)
+
+    ClickEvent.objects.filter(id=first_click.id).update(clicked_at=first_timestamp)
+    ClickEvent.objects.filter(id=second_click.id).update(
+        clicked_at=first_timestamp + timedelta(hours=1)
+    )
+    ClickEvent.objects.filter(id=third_click.id).update(clicked_at=second_timestamp)
+
+    response = authenticated_client.get(
+        reverse("analytics:short-link", kwargs={"link_id": short_link.id})
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    clicks_over_time = response.data["clicks_over_time"]
+
+    assert len(clicks_over_time) == 30
+
+    counts_by_date = {item["date"]: item["clicks"] for item in clicks_over_time}
+
+    assert counts_by_date[first_date] == 2
+    assert counts_by_date[second_date] == 1
+    assert counts_by_date[today] == 0
+
+    assert clicks_over_time[0]["date"] == today - timedelta(days=29)
+    assert clicks_over_time[-1]["date"] == today

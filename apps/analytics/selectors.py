@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from django.db.models import Count, Max, Min, Q, QuerySet
+from django.db.models.functions import TruncDate
 
 from apps.analytics.models import ClickEvent
 from apps.analytics.types import ClickEventSummary
@@ -36,3 +37,13 @@ def click_event_summary_for_link(
         "first_clicked_at": result["first_clicked_at"],
         "last_clicked_at": result["last_clicked_at"],
     }
+
+
+def click_event_get_daily_counts(*, short_link: ShortLink, start_at: datetime):
+    return (
+        ClickEvent.objects.filter(short_link=short_link, clicked_at__gte=start_at)
+        .annotate(date=TruncDate("clicked_at"))
+        .values("date")
+        .annotate(clicks=Count("id"))
+        .order_by("date")
+    )
