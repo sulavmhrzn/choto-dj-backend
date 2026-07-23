@@ -2,6 +2,8 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
+
 from config.logging import configure_structlog
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -199,3 +201,10 @@ SHORT_LINK_CACHE_TIMEOUT = os.getenv("SHORT_LINK_CACHE_TIMEOUT", default=300)
 
 
 configure_structlog(debug=DEBUG)
+
+CELERY_BEAT_SCHEDULE = {
+    "deactivate-expired-short-links": {
+        "task": "apps.links.tasks.short_link_deactivate_expired_task",
+        "schedule": crontab(minute="*/5"),
+    }
+}

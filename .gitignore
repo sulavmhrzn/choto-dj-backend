@@ -11,3 +11,7 @@ wheels/
 
 .env
 .idea/
+
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal

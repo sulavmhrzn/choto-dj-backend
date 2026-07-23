@@ -23,6 +23,18 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+  celery_beat:
+    build: .
+    command: uv run celery -A config beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
   db:
     image: postgres:17-alpine
     restart: unless-stopped

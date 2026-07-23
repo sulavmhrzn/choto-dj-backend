@@ -124,3 +124,11 @@ def short_link_get_redirectable_by_code(
         timeout=timeout,
     )
     return link
+
+
+def short_link_list_expired_active() -> QuerySet[ShortLink]:
+    return ShortLink.objects.filter(
+        is_active=True,
+        expires_at__isnull=False,
+        expires_at__lte=timezone.now(),
+    )

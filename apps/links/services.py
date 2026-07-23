@@ -9,6 +9,7 @@ from apps.accounts.models import User
 from apps.links.cache import short_link_redirect_cache_delete
 from apps.links.metrics import short_links_created_total
 from apps.links.models import ShortLink
+from apps.links.selectors import short_link_list_expired_active
 from apps.links.validators import is_reserved_short_code
 
 SHORT_CODE_ALPHABETS = string.ascii_letters + string.digits
@@ -198,3 +199,33 @@ def short_link_delete(*, link: ShortLink) -> None:
     logger.info("short_link_deleted", short_code=short_code)
 
     short_link_redirect_cache_delete(short_code=short_code)
+
+
+def _clear_short_link_redirect_caches(*, short_codes: list[str]):
+    for short_code in short_codes:
+        short_link_redirect_cache_delete(short_code=short_code)
+
+
+def short_link_deactivate_expired() -> int:
+    links = list(
+        short_link_list_expired_active().only("id", "short_code"),
+    )
+
+    if not links:
+        return 0
+
+    link_ids = [link.id for link in links]
+    short_codes = [link.short_code for link in links]
+
+    with transaction.atomic():
+        updated_count = ShortLink.objects.filter(
+            id__in=link_ids, is_active=True
+        ).update(is_active=False)
+
+        transaction.on_commit(
+            lambda short_codes=short_codes: _clear_short_link_redirect_caches(
+                short_codes=short_codes
+            )
+        )
+
+    return updated_count
