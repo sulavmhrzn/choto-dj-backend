@@ -1,11 +1,20 @@
+import hashlib
+import secrets
 from typing import Any
 
 import structlog
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import User
+from apps.accounts.constants import (
+    API_KEY_GENERATION_ATTEMPTS,
+    API_KEY_PREFIX_LENGTH,
+    API_KEY_SECRET_BYTES,
+)
+from apps.accounts.models import APIKey, User
 from apps.accounts.selectors import user_get_by_email
+from apps.accounts.types import CreatedAPIKey
 
 logger = structlog.getLogger()
 
@@ -86,3 +95,54 @@ def token_issue_for_user(*, user: User) -> dict[str, str]:
         "refresh": str(refresh),
         "access": str(refresh.access_token),
     }
+
+
+def hash_api_key_secret(*, secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def generate_api_key_prefix() -> str:
+    return secrets.token_hex(API_KEY_PREFIX_LENGTH // 2)
+
+
+def generate_api_key_secret() -> str:
+    return secrets.token_urlsafe(API_KEY_SECRET_BYTES)
+
+
+@transaction.atomic
+def api_key_create(
+    *,
+    owner: User,
+    name: str,
+) -> CreatedAPIKey:
+    for _ in range(API_KEY_GENERATION_ATTEMPTS):
+        prefix = generate_api_key_prefix()
+        secret = generate_api_key_secret()
+
+        try:
+            api_key = APIKey.objects.create(
+                owner=owner,
+                name=name,
+                prefix=prefix,
+                hashed_secret=hash_api_key_secret(secret=secret),
+            )
+        except IntegrityError:
+            continue
+
+        complete_secret = f"choto_{prefix}.{secret}"
+
+        return CreatedAPIKey(api_key=api_key, secret=complete_secret)
+
+    raise RuntimeError("Could not generate a unique API key")
+
+
+def api_key_revoke(*, api_key: APIKey) -> APIKey:
+    if not api_key.is_active:
+        return api_key
+
+    api_key.is_active = False
+    api_key.revoked_at = timezone.now()
+
+    api_key.save(update_fields=["is_active", "revoked_at"])
+
+    return api_key

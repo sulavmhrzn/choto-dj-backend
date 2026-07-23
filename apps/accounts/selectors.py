@@ -1,8 +1,9 @@
 import uuid
+from uuid import UUID
 
 from django.db.models import QuerySet
 
-from apps.accounts.models import User
+from apps.accounts.models import APIKey, User
 
 
 def normalize_email(email: str) -> str:
@@ -52,3 +53,11 @@ def user_get_active_by_id(*, user_id: uuid.UUID | str) -> User | None:
         )
     except User.DoesNotExist:
         return None
+
+
+def api_key_list_for_user(*, user: User) -> QuerySet[APIKey]:
+    return APIKey.objects.filter(owner=user).order_by("-created_at")
+
+
+def api_key_get_for_user(*, user: User, api_key_id: UUID) -> APIKey | None:
+    return APIKey.objects.filter(id=api_key_id, owner=user).first()

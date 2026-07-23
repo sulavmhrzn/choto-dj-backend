@@ -3,6 +3,7 @@ from typing import Any
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.accounts.models import APIKey
 from apps.links.constants import (
     MAX_SHORT_CODE_LENGTH,
     MIN_SHORT_CODE_LENGTH,
@@ -111,3 +112,28 @@ class ShortLinkListQuerySerializer(serializers.Serializer):
 
     def validate_search(self, value: str) -> str:
         return value.strip()
+
+
+class APIKeyCreateSerailizer(serializers.Serializer):
+    name = serializers.CharField(max_length=100, trim_whitespace=True)
+
+    def validate_name(self, value: str) -> str:
+        if not value:
+            raise serializers.ValidationError("API key name cannot be empty")
+
+        return value
+
+
+class APIKeySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = APIKey
+        fields = [
+            "id",
+            "name",
+            "prefix",
+            "is_active",
+            "last_used_at",
+            "created_at",
+            "revoked_at",
+        ]
+        read_only_fields = fields

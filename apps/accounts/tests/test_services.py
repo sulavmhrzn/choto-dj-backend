@@ -1,8 +1,9 @@
 import pytest
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from apps.accounts.models import User
+from apps.accounts.models import APIKey, User
 from apps.accounts.services import (
+    api_key_revoke,
     token_issue_for_user,
     user_activate,
     user_create,
@@ -131,3 +132,21 @@ def test_token_issue_for_user_returns_valid_tokens(user: User) -> None:
 
     assert str(refresh["user_id"]) == str(user.id)
     assert str(access["user_id"]) == str(user.id)
+
+
+@pytest.mark.django_db
+def test_api_key_revoke_marks_key_inactive(user) -> None:
+    api_key = APIKey.objects.create(
+        owner=user,
+        name="Github Actions",
+        prefix="github123",
+        hashed_secret="hashed-secret",
+    )
+
+    revoked_api_key = api_key_revoke(api_key=api_key)
+
+    api_key.refresh_from_db()
+
+    assert revoked_api_key == api_key
+    assert api_key.is_active is False
+    assert api_key.revoked_at is not None
