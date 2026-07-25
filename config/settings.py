@@ -207,5 +207,9 @@ CELERY_BEAT_SCHEDULE = {
     "deactivate-expired-short-links": {
         "task": "apps.links.tasks.short_link_deactivate_expired_task",
         "schedule": crontab(minute="*/5"),
-    }
+    },
+    "delete-expired-idempotency-records": {
+        "task": "apps.core.tasks.idempotency_record_delete_expired_task",
+        "schedule": crontab(minute="*/15"),
+    },
 }

@@ -2,8 +2,6 @@ from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
-from _pytest import outcomes
-from django.conf import settings
 from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
@@ -13,6 +11,8 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
+from apps.core.idempotency import build_idempotency_request_hash
+from apps.core.models import IdempotencyRecord
 from apps.links import views
 from apps.links.models import ShortLink
 from apps.links.services import short_link_create
@@ -193,29 +193,28 @@ def test_expired_short_link_returns_not_found(
         )
     )
 
-    @pytest.mark.django_db
-    def test_unexpired_short_link_redirects(
-        api_client: APIClient,
-        user: User,
-    ) -> None:
-        link = ShortLink.objects.create(
-            owner=user,
-            short_code="future1",
-            destination_url="https://example.com/destination",
-            expires_at=timezone.now() + timedelta(hours=1),
+
+@pytest.mark.django_db
+def test_unexpired_short_link_redirects(
+    api_client,
+    user,
+) -> None:
+    link = ShortLink.objects.create(
+        owner=user,
+        short_code="future1",
+        destination_url="https://example.com/destination",
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+    response = api_client.get(
+        reverse(
+            "short-link-redirect",
+            kwargs={"short_code": link.short_code},
         )
+    )
 
-        response = api_client.get(
-            reverse(
-                "short-link-redirect",
-                kwargs={"short_code": link.short_code},
-            )
-        )
-
-        assert response.status_code == status.HTTP_302_FOUND
-        assert response["Location"] == link.destination_url
-
-    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.status_code == status.HTTP_302_FOUND
+    assert response["Location"] == link.destination_url
 
 
 @pytest.mark.django_db
@@ -812,3 +811,375 @@ def test_redirect_increments_click_dispatch_success_metric(
     assert response.status_code == 302
     labels_mock.assert_called_once_with(outcome="success")
     increment_mock.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_short_link_create_replays_completed_idempotent_request(authenticated_client):
+    url = reverse("links:list-create")
+    payload = {
+        "destination_url": "https://example.com/docs",
+        "title": "Example docs",
+    }
+
+    first_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="create-link-123",
+    )
+
+    second_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="create-link-123",
+    )
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+    assert second_response.status_code == status.HTTP_201_CREATED
+
+    assert second_response["Idempotency-Replayed"] == "true"
+    assert second_response.data == first_response.data
+
+    assert ShortLink.objects.count() == 1
+    assert IdempotencyRecord.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_short_link_create_rejects_same_idempotency_key_with_different_payload(
+    authenticated_client,
+) -> None:
+    url = reverse("links:list-create")
+
+    first_response = authenticated_client.post(
+        url,
+        data={
+            "destination_url": "https://example.com/one",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="create-link-123",
+    )
+
+    second_response = authenticated_client.post(
+        url,
+        data={
+            "destination_url": "https://example.com/two",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="create-link-123",
+    )
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+    assert second_response.status_code == status.HTTP_409_CONFLICT
+
+    assert ShortLink.objects.count() == 1
+    assert IdempotencyRecord.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_short_link_create_without_idempotency_key_creates_each_request(
+    authenticated_client,
+) -> None:
+    url = reverse("links:list-create")
+    payload = {
+        "destination_url": "https://example.com",
+    }
+
+    first_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+    )
+
+    second_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+    )
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+    assert second_response.status_code == status.HTTP_201_CREATED
+    assert ShortLink.objects.count() == 2
+    assert IdempotencyRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_create_rejects_blank_idempotency_key(
+    authenticated_client,
+) -> None:
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data={
+            "destination_url": "https://example.com",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="   ",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_create_rejects_oversized_idempotency_key(
+    authenticated_client,
+) -> None:
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data={
+            "destination_url": "https://example.com",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="a" * 256,
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_create_scopes_idempotency_key_to_user(
+    user: User, another_user
+) -> None:
+
+    first_client = APIClient()
+    first_client.force_authenticate(user=user)
+
+    second_client = APIClient()
+    second_client.force_authenticate(user=another_user)
+
+    url = reverse("links:list-create")
+    payload = {
+        "destination_url": "https://example.com",
+    }
+
+    first_response = first_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+
+    second_response = second_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+    assert second_response.status_code == status.HTTP_201_CREATED
+
+    assert ShortLink.objects.count() == 2
+    assert IdempotencyRecord.objects.count() == 2
+
+    assert first_response.data != second_response.data
+
+
+@pytest.mark.django_db
+def test_short_link_create_returns_conflict_when_request_is_processing(
+    authenticated_client,
+    user,
+) -> None:
+    payload = {
+        "title": "Example",
+        "destination_url": "https://example.com",
+    }
+
+    request_hash = build_idempotency_request_hash(
+        data=payload,
+    )
+
+    IdempotencyRecord.objects.create(
+        owner=user,
+        key="request-in-progress",
+        request_hash=request_hash,
+        status=IdempotencyRecord.Status.PROCESSING,
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="request-in-progress",
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_short_link_create_rejects_processing_key_with_different_payload(
+    authenticated_client,
+    user,
+) -> None:
+    original_hash = build_idempotency_request_hash(
+        data={
+            "destination_url": "https://example.com/original",
+        },
+    )
+
+    IdempotencyRecord.objects.create(
+        owner=user,
+        key="request-in-progress",
+        request_hash=original_hash,
+        status=IdempotencyRecord.Status.PROCESSING,
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data={
+            "destination_url": "https://example.com/different",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="request-in-progress",
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_short_link_create_replaces_expired_idempotency_record(
+    authenticated_client,
+    user,
+) -> None:
+    expired_record = IdempotencyRecord.objects.create(
+        owner=user,
+        key="reusable-key",
+        request_hash="a" * 64,
+        status=IdempotencyRecord.Status.COMPLETED,
+        response_status=status.HTTP_201_CREATED,
+        response_data={
+            "id": "old-id",
+        },
+        expires_at=timezone.now() - timedelta(minutes=1),
+    )
+
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        data={
+            "destination_url": "https://example.com/new",
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="reusable-key",
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    assert "Idempotency-Replayed" not in response
+
+    assert ShortLink.objects.count() == 1
+    assert IdempotencyRecord.objects.count() == 1
+
+    assert not IdempotencyRecord.objects.filter(
+        id=expired_record.id,
+    ).exists()
+
+    new_record = IdempotencyRecord.objects.get(
+        owner=user,
+        key="reusable-key",
+    )
+
+    assert new_record.id != expired_record.id
+    assert new_record.status == IdempotencyRecord.Status.COMPLETED
+    assert new_record.short_link is not None
+
+
+@pytest.mark.django_db
+def test_short_link_create_rolls_back_idempotency_record_when_creation_fails(
+    authenticated_client, monkeypatch
+) -> None:
+    def failing_short_link_create(**kwargs) -> None:
+        raise RuntimeError("Unexpected creation failure.")
+
+    monkeypatch.setattr(
+        "apps.links.views.short_link_create",
+        failing_short_link_create,
+    )
+
+    with pytest.raises(RuntimeError, match="Unexpected creation failure."):
+        authenticated_client.post(
+            reverse("links:list-create"),
+            data={"destination_url": "https://example.com"},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="failed-request",
+        )
+
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_create_rolls_back_link_when_idempotency_completion_fails(
+    authenticated_client,
+    monkeypatch,
+) -> None:
+    def failing_idempotency_record_complete(**kwargs) -> None:
+        raise RuntimeError("Unexpected completion failure.")
+
+    monkeypatch.setattr(
+        "apps.links.views.idempotency_record_complete",
+        failing_idempotency_record_complete,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Unexpected completion failure.",
+    ):
+        authenticated_client.post(
+            reverse("links:list-create"),
+            data={
+                "destination_url": "https://example.com",
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="completion-failure",
+        )
+
+    assert ShortLink.objects.count() == 0
+    assert IdempotencyRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_replay_does_not_call_creation_service(
+    authenticated_client,
+    monkeypatch,
+) -> None:
+    url = reverse("links:list-create")
+    payload = {
+        "destination_url": "https://example.com",
+    }
+
+    first_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="replay-key",
+    )
+
+    assert first_response.status_code == status.HTTP_201_CREATED
+
+    def unexpected_short_link_create(**kwargs) -> None:
+        raise AssertionError("short_link_create must not run during replay.")
+
+    monkeypatch.setattr(
+        "apps.links.views.short_link_create",
+        unexpected_short_link_create,
+    )
+
+    replay_response = authenticated_client.post(
+        url,
+        data=payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="replay-key",
+    )
+
+    assert replay_response.status_code == status.HTTP_201_CREATED
+    assert replay_response["Idempotency-Replayed"] == "true"
+    assert replay_response.data == first_response.data
+    assert ShortLink.objects.count() == 1

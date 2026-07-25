@@ -2,6 +2,7 @@ from typing import cast
 from uuid import UUID
 
 import structlog
+from django.db import transaction
 from django.shortcuts import redirect
 from rest_framework import status
 from rest_framework.exceptions import NotFound, ValidationError
@@ -15,6 +16,10 @@ from apps.accounts.models import User
 from apps.analytics.metrics import click_event_dispatch_total
 from apps.analytics.tasks import click_event_create_task
 from apps.analytics.utils import get_client_ip
+from apps.core.exceptions import IdempotencyConflict
+from apps.core.idempotency import build_idempotency_request_hash, get_idempotency_key
+from apps.core.models import IdempotencyRecord
+from apps.core.services import idempotency_record_claim, idempotency_record_complete
 from apps.links.metrics import short_link_redirects_total
 from apps.links.models import ShortLink
 from apps.links.selectors import (
@@ -74,14 +79,60 @@ class ShortLinkListCreateAPIView(APIView):
 
         serializer = ShortLinkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            link = short_link_create(owner=user, **serializer.validated_data)
-        except ValueError as exc:
-            raise ValidationError({"short_code": str(exc)})
+        idempotency_key = get_idempotency_key(request=request)
 
-        response_serializer = ShortLinkSerializer(link)
+        if idempotency_key is None:
+            try:
+                link = short_link_create(owner=user, **serializer.validated_data)
+            except ValueError as exc:
+                raise ValidationError({"short_code": str(exc)})
 
-        return Response(data=response_serializer.data, status=status.HTTP_201_CREATED)
+            response_serializer = ShortLinkSerializer(link)
+
+            return Response(
+                data=response_serializer.data, status=status.HTTP_201_CREATED
+            )
+
+        request_hash = build_idempotency_request_hash(
+            data=dict(serializer.validated_data)
+        )
+        with transaction.atomic():
+            claim = idempotency_record_claim(
+                owner=user,
+                key=idempotency_key,
+                request_hash=request_hash,
+            )
+
+            if not claim.created:
+                record = claim.record
+                if record.request_hash != request_hash:
+                    raise IdempotencyConflict()
+
+                if record.status == IdempotencyRecord.Status.COMPLETED:
+                    response = Response(
+                        data=record.response_data, status=record.response_status
+                    )
+                    response["Idempotency-Replayed"] = "true"
+                    return response
+
+                raise IdempotencyConflict(
+                    "A request with this idempotency key is already being processed"
+                )
+
+            try:
+                short_link = short_link_create(owner=user, **serializer.validated_data)
+            except ValueError as exc:
+                raise ValidationError({"short_code": str(exc)})
+
+            response_data = ShortLinkSerializer(short_link).data
+
+            idempotency_record_complete(
+                record=claim.record,
+                response_status=status.HTTP_201_CREATED,
+                response_data=dict(response_data),
+                short_link=short_link,
+            )
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class ShortLinkDetailAPIView(APIView):
