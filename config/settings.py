@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     # Third party apps
     "rest_framework",
     "rest_framework_simplejwt",
@@ -37,6 +38,7 @@ INSTALLED_APPS = [
     "apps.links",
     "apps.analytics",
     "apps.core",
+    "apps.webhooks",
 ]
 
 MIDDLEWARE = [
@@ -213,3 +215,5 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
     },
 }
+
+WEBHOOK_ENCRYPTION_KEY = os.getenv("WEBHOOK_ENCRYPTION_KEY")

@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/v1/accounts/", include("apps.accounts.urls")),
     path("api/v1/links/", include("apps.links.urls")),
     path("api/v1/analytics/", include("apps.analytics.urls")),
+    path("api/v1/webhooks/", include("apps.webhooks.urls")),
     path(
         "api/v1/auth/token/",
         CustomTokenObtainPairAPIView.as_view(),
