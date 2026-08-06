@@ -4,6 +4,7 @@ from datetime import datetime
 
 import structlog
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.links.cache import short_link_redirect_cache_delete
@@ -11,6 +12,8 @@ from apps.links.metrics import short_links_created_total
 from apps.links.models import ShortLink
 from apps.links.selectors import short_link_list_expired_active
 from apps.links.validators import is_reserved_short_code
+from apps.webhooks.models import WebhookEventType
+from apps.webhooks.services import webhook_event_dispatch
 
 SHORT_CODE_ALPHABETS = string.ascii_letters + string.digits
 DEFAULT_SHORT_CODE_LENGTH = 7
@@ -24,6 +27,120 @@ def generate_short_code(
     length: int = DEFAULT_SHORT_CODE_LENGTH,
 ) -> str:
     return "".join(secrets.choice(SHORT_CODE_ALPHABETS) for _ in range(length))
+
+
+def _build_short_link_created_webhook_data(
+    *, short_link: ShortLink
+) -> dict[str, object]:
+    return {
+        "short_link_id": str(short_link.id),
+        "short_code": short_link.short_code,
+        "destination_url": short_link.destination_url,
+        "title": short_link.title,
+        "is_active": short_link.is_active,
+        "expires_at": (
+            short_link.expires_at.isoformat()
+            if short_link.expires_at is not None
+            else None
+        ),
+        "created_at": short_link.created_at.isoformat(),
+    }
+
+
+def _build_short_link_updated_webhook_data(
+    *, short_link: ShortLink, changed_fields: list[str]
+) -> dict[str, object]:
+    return {
+        "short_link_id": str(short_link.id),
+        "short_code": short_link.short_code,
+        "destination_url": short_link.destination_url,
+        "title": short_link.title,
+        "is_active": short_link.is_active,
+        "expires_at": (
+            short_link.expires_at.isoformat()
+            if short_link.expires_at is not None
+            else None
+        ),
+        "updated_at": short_link.updated_at.isoformat(),
+        "changed_fields": changed_fields,
+    }
+
+
+def _build_short_link_deleted_webhook_data(
+    *, short_link: ShortLink
+) -> dict[str, object]:
+    return {
+        "short_link_id": str(short_link.id),
+        "short_code": short_link.short_code,
+        "destination_url": short_link.destination_url,
+        "title": short_link.title,
+        "is_active": short_link.is_active,
+        "expires_at": (
+            short_link.expires_at.isoformat()
+            if short_link.expires_at is not None
+            else None
+        ),
+        "created_at": short_link.created_at.isoformat(),
+    }
+
+
+def _handle_short_link_created(*, short_link: ShortLink):
+    short_link_redirect_cache_delete(
+        short_code=short_link.short_code,
+    )
+    short_links_created_total.inc()
+    try:
+        webhook_event_dispatch(
+            owner=short_link.owner,
+            event_type=WebhookEventType.SHORT_LINK_CREATED,
+            data=_build_short_link_created_webhook_data(short_link=short_link),
+            created_at=short_link.created_at,
+        )
+    except Exception:  # noqa
+        logger.exception(
+            "short_link_created_webhook_dispatch_failed",
+            short_link_id=str(short_link.id),
+        )
+
+
+def _handle_short_link_updated(*, short_link: ShortLink, updated_fields: list[str]):
+    short_link_redirect_cache_delete(short_code=short_link.short_code)
+    try:
+        webhook_event_dispatch(
+            owner=short_link.owner,
+            event_type=WebhookEventType.SHORT_LINK_UPDATED,
+            data=_build_short_link_updated_webhook_data(
+                short_link=short_link, changed_fields=updated_fields
+            ),
+            created_at=short_link.updated_at,
+        )
+    except Exception:
+        logger.exception(
+            "short_link_updated_webhook_dispatch_failed",
+            short_link_id=str(short_link.id),
+        )
+
+
+def _handle_short_link_deleted(
+    *,
+    owner: User,
+    short_code: str,
+    webhook_data: dict[str, object],
+    deleted_at: datetime,
+):
+    short_link_redirect_cache_delete(short_code=short_code)
+    try:
+        webhook_event_dispatch(
+            owner=owner,
+            event_type=WebhookEventType.SHORT_LINK_DELETED,
+            data=webhook_data,
+            created_at=deleted_at,
+        )
+    except Exception:
+        logger.exception(
+            "short_link_deleted_webhook_dispatch_failed",
+            short_link_id=webhook_data["short_link_id"],
+        )
 
 
 def short_link_create(
@@ -50,13 +167,6 @@ def short_link_create(
     )
 
 
-def _handle_short_link_created(*, short_code):
-    short_link_redirect_cache_delete(
-        short_code=short_code,
-    )
-    short_links_created_total.inc()
-
-
 def _short_link_create_with_custom_code(
     *,
     owner: User,
@@ -75,8 +185,8 @@ def _short_link_create_with_custom_code(
                 expires_at=expires_at,
             )
             transaction.on_commit(
-                lambda short_code=link.short_code: _handle_short_link_created(
-                    short_code=short_code
+                lambda short_link=link: _handle_short_link_created(
+                    short_link=short_link
                 )
             )
             logger.info(
@@ -123,8 +233,8 @@ def _short_link_create_with_generated_code(
                     expires_at=expires_at,
                 )
                 transaction.on_commit(
-                    lambda short_code=link.short_code: _handle_short_link_created(
-                        short_code=short_code
+                    lambda short_link=link: _handle_short_link_created(
+                        short_link=short_link
                     )
                 )
                 logger.info(
@@ -151,6 +261,7 @@ def _short_link_create_with_generated_code(
     raise RuntimeError("Could not generate a unique short code.")
 
 
+@transaction.atomic
 def short_link_update(
     *,
     link: ShortLink,
@@ -188,17 +299,35 @@ def short_link_update(
             owner_id=str(link.owner.id),
             update_fields=update_fields,
         )
-
-        short_link_redirect_cache_delete(short_code=link.short_code)
+        transaction.on_commit(
+            lambda link=link, changed_fields=update_fields.copy(): (
+                _handle_short_link_updated(
+                    short_link=link, updated_fields=changed_fields
+                )
+            )
+        )
     return link
 
 
+@transaction.atomic
 def short_link_delete(*, link: ShortLink) -> None:
+    owner = link.owner
     short_code = link.short_code
+    deleted_at = timezone.now()
+    webhook_data = _build_short_link_deleted_webhook_data(short_link=link)
+
     link.delete()
     logger.info("short_link_deleted", short_code=short_code)
-
-    short_link_redirect_cache_delete(short_code=short_code)
+    transaction.on_commit(
+        lambda owner=owner, short_code=short_code, webhook_data=webhook_data, deleted_at=deleted_at: (
+            _handle_short_link_deleted(
+                owner=owner,
+                short_code=short_code,
+                webhook_data=webhook_data,
+                deleted_at=deleted_at,
+            )
+        )
+    )
 
 
 def _clear_short_link_redirect_caches(*, short_codes: list[str]):

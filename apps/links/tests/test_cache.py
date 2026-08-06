@@ -1,5 +1,6 @@
 import pytest
 from django.core.cache import cache
+from psycopg.generators import execute
 
 from apps.accounts.models import User
 from apps.links.models import ShortLink
@@ -83,7 +84,9 @@ def test_missing_short_link_is_negatively_cached(django_assert_num_queries):
 
 
 def test_short_link_update_invalidates_redirect_cache(
-    short_link, django_assert_num_queries
+    short_link,
+    django_assert_num_queries,
+    django_capture_on_commit_callbacks,
 ):
     original_result = short_link_get_redirectable_by_code(
         short_code=short_link.short_code
@@ -92,7 +95,8 @@ def test_short_link_update_invalidates_redirect_cache(
     assert original_result is not None
 
     updated_destination = "https://example.com/updated"
-    short_link_update(link=short_link, destination_url=updated_destination)
+    with django_capture_on_commit_callbacks(execute=True):
+        short_link_update(link=short_link, destination_url=updated_destination)
 
     with django_assert_num_queries(1):
         updated_result = short_link_get_redirectable_by_code(
@@ -105,6 +109,7 @@ def test_short_link_update_invalidates_redirect_cache(
 def test_short_link_deactivation_invalidates_redirect_cache(
     short_link,
     django_assert_num_queries,
+    django_capture_on_commit_callbacks,
 ):
     cached_result = short_link_get_redirectable_by_code(
         short_code=short_link.short_code,
@@ -112,10 +117,11 @@ def test_short_link_deactivation_invalidates_redirect_cache(
 
     assert cached_result is not None
 
-    short_link_update(
-        link=short_link,
-        is_active=False,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        short_link_update(
+            link=short_link,
+            is_active=False,
+        )
 
     with django_assert_num_queries(1):
         result = short_link_get_redirectable_by_code(
@@ -126,8 +132,7 @@ def test_short_link_deactivation_invalidates_redirect_cache(
 
 
 def test_short_link_delete_invalidates_redirect_cache(
-    short_link,
-    django_assert_num_queries,
+    short_link, django_assert_num_queries, django_capture_on_commit_callbacks
 ):
     cached_result = short_link_get_redirectable_by_code(
         short_code=short_link.short_code,
@@ -137,7 +142,8 @@ def test_short_link_delete_invalidates_redirect_cache(
 
     short_code = short_link.short_code
 
-    short_link_delete(link=short_link)
+    with django_capture_on_commit_callbacks(execute=True):
+        short_link_delete(link=short_link)
 
     with django_assert_num_queries(1):
         result = short_link_get_redirectable_by_code(
