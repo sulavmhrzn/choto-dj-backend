@@ -47,6 +47,7 @@ jobs:
 
       CELERY_BROKER_URL: redis://localhost:6379/0
       REDIS_CACHE_URL: redis://localhost:6379/1
+      WEBHOOK_ENCRYPTION_KEY: "hivGfCCZ84t4tfUp0oyYgo1FqH3568ac43fZuM-BO-8="
 
     steps:
       - name: Check out repository
