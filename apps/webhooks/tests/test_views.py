@@ -1,3 +1,6 @@
+import json
+from uuid import uuid4
+
 import pytest
 from cryptography.fernet import Fernet
 from django.urls import reverse
@@ -8,8 +11,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import User
 from apps.accounts.services import api_key_create
 from apps.webhooks.encryption import decrypt_webhook_secret
-from apps.webhooks.models import WebhookEndpoint, WebhookEventType
-from apps.webhooks.services import webhook_endpoint_create, webhook_endpoint_update
+from apps.webhooks.models import (
+    WebhookDelivery,
+    WebhookDeliveryStatus,
+    WebhookEndpoint,
+    WebhookEventType,
+)
+from apps.webhooks.services import (
+    webhook_endpoint_create,
+    webhook_endpoint_update,
+)
 
 
 @pytest.fixture
@@ -548,3 +559,308 @@ def test_webhook_endpoint_update_rejects_duplicate_events(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_returns_owned_deliveries(authenticated_client, user):
+    endpoint = webhook_endpoint_create(
+        owner=user,
+        name="Analytics",
+        url="https://example.com/webhooks/",
+        events=[WebhookEventType.SHORT_LINK_CREATED],
+    ).endpoint
+
+    first_delivery = WebhookDelivery.objects.create(
+        endpoint=endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+    )
+    second_delivery = WebhookDelivery.objects.create(
+        endpoint=endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+    )
+
+    response = authenticated_client.get(
+        reverse("webhooks:endpoint-deliveries", kwargs={"endpoint_id": endpoint.id})
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    deliver_ids = [item["id"] for item in response.data["results"]]
+
+    assert deliver_ids == [str(second_delivery.id), str(first_delivery.id)]
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_retursn_404_for_another_users_endpoint(
+    authenticated_client, another_user
+):
+    endpoint = webhook_endpoint_create(
+        owner=another_user,
+        name="Analytics",
+        url="https://example.com/webhooks/",
+        events=[WebhookEventType.SHORT_LINK_CREATED],
+    ).endpoint
+
+    response = authenticated_client.get(
+        reverse("webhooks:endpoint-deliveries", kwargs={"endpoint_id": endpoint.id})
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_returns_404_for_missing_endpoint(
+    authenticated_client,
+):
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": uuid4()},
+        )
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_returns_empty_list_when_no_deliveries(
+    authenticated_client,
+    user,
+):
+    endpoint = webhook_endpoint_create(
+        owner=user,
+        name="Analytics",
+        url="https://example.com/webhooks/",
+        events=[WebhookEventType.SHORT_LINK_CREATED],
+    ).endpoint
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": endpoint.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["results"] == []
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_filters_by_status(
+    authenticated_client, user, webhook_endpoint
+):
+
+    created_delivery = WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.PROCESSING,
+    )
+    WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.SUCCEEDED,
+    )
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": webhook_endpoint.id},
+        ),
+        {
+            "status": WebhookDeliveryStatus.PROCESSING,
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["id"] == str(created_delivery.id)
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_filters_by_event_type(
+    authenticated_client, user, webhook_endpoint
+):
+
+    created_delivery = WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.PROCESSING,
+    )
+    WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_UPDATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.SUCCEEDED,
+    )
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": webhook_endpoint.id},
+        ),
+        {
+            "event_type": WebhookEventType.SHORT_LINK_CREATED,
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["id"] == str(created_delivery.id)
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_combines_filters(
+    authenticated_client, user, webhook_endpoint
+):
+
+    expected_delivery = WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_UPDATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.FAILED,
+    )
+
+    WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_CREATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.FAILED,
+    )
+
+    WebhookDelivery.objects.create(
+        endpoint=webhook_endpoint,
+        event_type=WebhookEventType.SHORT_LINK_UPDATED,
+        payload=json.dumps({"event_type": "short_link.created"}),
+        status=WebhookDeliveryStatus.SUCCEEDED,
+    )
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": webhook_endpoint.id},
+        ),
+        {
+            "status": WebhookDeliveryStatus.FAILED,
+            "event_type": WebhookEventType.SHORT_LINK_UPDATED,
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["id"] == str(expected_delivery.id)
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_rejects_invalid_status(
+    authenticated_client, user, webhook_endpoint
+):
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": webhook_endpoint.id},
+        ),
+        {
+            "status": "banana",
+        },
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_detail_returns_owned_delivery(
+    authenticated_client, webhook_delivery
+):
+    response = authenticated_client.get(
+        reverse("webhooks:delivery-detail", kwargs={"delivery_id": webhook_delivery.id})
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["id"] == str(webhook_delivery.id)
+    assert response.data["event_id"] == str(webhook_delivery.event_id)
+    assert response.data["event_type"] == webhook_delivery.event_type
+    assert response.data["endpoint_id"] == webhook_delivery.endpoint_id
+    assert response.data["status"] == webhook_delivery.status
+    assert response.data["attempt_count"] == webhook_delivery.attempt_count
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_detail_returns_404_for_another_user(
+    authenticated_client, another_user, webhook_delivery
+):
+    webhook_delivery.endpoint.owner = another_user
+    webhook_delivery.endpoint.save(update_fields=["owner"])
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:delivery-detail",
+            kwargs={"delivery_id": webhook_delivery.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_detail_returns_404_when_missing(
+    authenticated_client,
+):
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:delivery-detail",
+            kwargs={"delivery_id": uuid4()},
+        )
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_detail_does_not_expose_sensitive_fields(
+    authenticated_client, webhook_delivery
+):
+
+    response = authenticated_client.get(
+        reverse(
+            "webhooks:delivery-detail",
+            kwargs={"delivery_id": webhook_delivery.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    assert "payload" not in response.data
+    assert "response_body" not in response.data
+    assert "encrypted_secret" not in response.data
+    assert "secret" not in response.data
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_list_requires_authentication(api_client, webhook_endpoint):
+
+    response = api_client.get(
+        reverse(
+            "webhooks:endpoint-deliveries",
+            kwargs={"endpoint_id": webhook_endpoint.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_webhook_delivery_detail_requires_authentication(api_client, webhook_delivery):
+    response = api_client.get(
+        reverse(
+            "webhooks:delivery-detail",
+            kwargs={"delivery_id": webhook_delivery.id},
+        )
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -15,6 +15,14 @@ def user() -> User:
 
 
 @pytest.fixture
+def another_user() -> User:
+    return User.objects.create_user(
+        email="sweta@mail.com",
+        password="sweta",
+    )
+
+
+@pytest.fixture
 def webhook_endpoint(
     settings,
     user,

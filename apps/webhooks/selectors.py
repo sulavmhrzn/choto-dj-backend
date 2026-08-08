@@ -35,3 +35,33 @@ def webhook_delivery_get(*, delivery_id: UUID) -> WebhookDelivery | None:
 
 def webhook_delivery_get_retry_delay(*, attempt_count: int) -> int | None:
     return WEBHOOK_RETRY_DELAYS.get(attempt_count)
+
+
+def webhook_delivery_list_for_endpoint(
+    *,
+    user: User,
+    endpoint_id: UUID,
+    status: str | None = None,
+    event_type: str | None = None,
+) -> QuerySet[WebhookDelivery]:
+    queryset = WebhookDelivery.objects.filter(
+        endpoint_id=endpoint_id, endpoint__owner=user
+    ).select_related("endpoint")
+
+    if status is not None:
+        queryset = queryset.filter(status=status)
+
+    if event_type is not None:
+        queryset = queryset.filter(event_type=event_type)
+
+    return queryset.order_by("-created_at")
+
+
+def webhook_delivery_get_for_user(
+    *, user: User, delivery_id: UUID
+) -> WebhookDelivery | None:
+    return (
+        WebhookDelivery.objects.filter(id=delivery_id, endpoint__owner=user)
+        .select_related("endpoint")
+        .first()
+    )

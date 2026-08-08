@@ -11,15 +11,21 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import User
 from apps.webhooks.selectors import (
+    webhook_delivery_get_for_user,
+    webhook_delivery_list_for_endpoint,
     webhook_endpoint_get_for_user,
     webhook_endpoint_list_for_user,
 )
 from apps.webhooks.serializers import (
+    WebhookDeliveryDetailSerializer,
+    WebhookDeliveryFilterSerializer,
+    WebhookDeliveryListSerializer,
     WebhookEndpointCreateSerializer,
     WebhookEndpointSerializer,
     WebhookEndpointUpdateSerializer,
 )
 from apps.webhooks.services import webhook_endpoint_create, webhook_endpoint_update
+from config.api.pagination import DefaultPageNumberPagination
 
 
 class WebhookEndpointListCreateAPIView(APIView):
@@ -96,3 +102,44 @@ class WebhookEndpointDetailAPIView(APIView):
             WebhookEndpointSerializer(updated_endpoint).data,
             status=status.HTTP_200_OK,
         )
+
+
+class WebhookEndpointDeliveryListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, endpoint_id: UUID) -> Response:
+        endpoint = webhook_endpoint_get_for_user(
+            user=request.user, endpoint_id=endpoint_id
+        )
+        if not endpoint:
+            raise NotFound("Webhook endpoint not found.")
+
+        filter_serializer = WebhookDeliveryFilterSerializer(data=request.query_params)
+        filter_serializer.is_valid(raise_exception=True)
+
+        deliveries = webhook_delivery_list_for_endpoint(
+            user=request.user,
+            endpoint_id=endpoint.id,
+            **filter_serializer.validated_data,
+        )
+        paginator = DefaultPageNumberPagination()
+        page = paginator.paginate_queryset(deliveries, request, view=self)
+
+        serializer = WebhookDeliveryListSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class WebhookDeliveryDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, delivery_id: UUID) -> Response:
+        delivery = webhook_delivery_get_for_user(
+            user=request.user, delivery_id=delivery_id
+        )
+
+        if delivery is None:
+            raise NotFound("Webhook delivery not found.")
+
+        serializer = WebhookDeliveryDetailSerializer(delivery)
+
+        return Response(serializer.data)

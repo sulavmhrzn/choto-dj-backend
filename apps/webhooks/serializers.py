@@ -1,6 +1,11 @@
 from rest_framework import serializers
 
-from apps.webhooks.models import WebhookEndpoint, WebhookEventType
+from apps.webhooks.models import (
+    WebhookDelivery,
+    WebhookDeliveryStatus,
+    WebhookEndpoint,
+    WebhookEventType,
+)
 
 
 class WebhookEndpointCreateSerializer(serializers.Serializer):
@@ -46,3 +51,51 @@ class WebhookEndpointUpdateSerializer(serializers.Serializer):
         if len(value) != len(set(value)):
             raise serializers.ValidationError("Webhook events must be unique.")
         return value
+
+
+class WebhookDeliveryListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebhookDelivery
+        fields = [
+            "id",
+            "event_id",
+            "event_type",
+            "endpoint_id",
+            "status",
+            "attempt_count",
+            "response_status",
+            "next_attempt_at",
+            "delivered_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class WebhookDeliveryDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebhookDelivery
+        fields = [
+            "id",
+            "event_id",
+            "event_type",
+            "endpoint_id",
+            "status",
+            "attempt_count",
+            "response_status",
+            "error_message",
+            "next_attempt_at",
+            "delivered_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class WebhookDeliveryFilterSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=WebhookDeliveryStatus.choices, required=False
+    )
+    event_type = serializers.ChoiceField(
+        choices=WebhookEventType.choices, required=False
+    )
