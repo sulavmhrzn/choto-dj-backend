@@ -1,8 +1,12 @@
+from typing import cast
+
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
+from django.db import transaction
 from django.http import HttpRequest
 
 from apps.accounts.models import User
+from apps.billing.services import subscription_create_default
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
@@ -43,3 +47,19 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if update_fields:
             update_fields.append("updated_at")
             user.save(update_fields=update_fields)
+
+    @transaction.atomic
+    def save_user(
+        self, request: HttpRequest, sociallogin: SocialLogin, form=None
+    ) -> User:
+        user = cast(
+            User,
+            super().save_user(
+                request,
+                sociallogin,
+                form,
+            ),
+        )
+
+        subscription_create_default(user=user)
+        return user

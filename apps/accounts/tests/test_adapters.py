@@ -1,9 +1,13 @@
+from unittest.mock import patch
+
 import pytest
+from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from django.test import RequestFactory
 
 from apps.accounts.adapters import SocialAccountAdapter
 from apps.accounts.models import User
+from apps.billing.models import PlanCode
 
 
 @pytest.mark.django_db
@@ -66,3 +70,39 @@ def test_pre_social_login_updates_existing_user_profile() -> None:
 
     assert user.full_name == "Sulav Maharjan"
     assert user.avatar_url == "https://example.com/new-avatar.jpg"
+
+
+@pytest.mark.django_db
+def test_social_signup_creates_free_subscription():
+    request = RequestFactory().get("/")
+
+    user = User.objects.create_user(
+        email="sulav@example.com",
+        avatar_url="https://example.com/old-avatar.jpg",
+    )
+    account = SocialAccount.objects.create(
+        provider="google",
+        uid="google-user-id",
+        user=user,
+        extra_data={
+            "name": "Sulav Maharjan",
+            "picture": "https://example.com/new-avatar.jpg",
+        },
+    )
+
+    sociallogin = SocialLogin(user=user, account=account)
+
+    adapter = SocialAccountAdapter()
+
+    with patch.object(
+        DefaultSocialAccountAdapter,
+        "save_user",
+        return_value=user,
+    ):
+        result = adapter.save_user(
+            request=request,
+            sociallogin=sociallogin,
+        )
+
+    assert result == user
+    assert user.subscription.plan.code == PlanCode.FREE

@@ -4,9 +4,8 @@ from unittest.mock import Mock
 import pytest
 from cryptography.fernet import Fernet
 from django.utils import timezone
-from pytest_django.fixtures import django_capture_on_commit_callbacks
 
-from apps.accounts.models import User
+from apps.billing.exceptions import PlanLimitExceededError
 from apps.links import services
 from apps.links.models import ShortLink
 from apps.links.services import (
@@ -17,20 +16,6 @@ from apps.links.services import (
 )
 from apps.webhooks.models import WebhookDelivery, WebhookEventType
 from apps.webhooks.services import webhook_endpoint_create
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(email="sulav@mail.com", password="strong-password")
-
-
-@pytest.fixture
-def short_link(user) -> ShortLink:
-    return short_link_create(
-        owner=user,
-        destination_url="https://example.com/first",
-        short_code="portfolio",
-    )
 
 
 @pytest.mark.django_db
@@ -742,3 +727,39 @@ def test_webhook_dispatch_failure_does_not_undo_short_link_delete(
 
     assert short_link.id is None
     assert WebhookDelivery.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_short_link_create_fails_when_plan_limit_reached(user, short_link):
+    subscription = user.subscription
+    subscription.plan.short_link_limit = 1
+    subscription.plan.save(update_fields=["short_link_limit"])
+
+    with pytest.raises(
+        PlanLimitExceededError, match="Short link limit reached for current plan."
+    ):
+        short_link_create(
+            owner=user,
+            destination_url="https://example.com",
+            title="Limit reached",
+        )
+
+
+@pytest.mark.django_db
+def test_short_link_create_succeeds_below_plan_limit(
+    user,
+):
+    subscription = user.subscription
+
+    subscription.plan.short_link_limit = 1
+    subscription.plan.save(
+        update_fields=["short_link_limit"],
+    )
+
+    link = short_link_create(
+        owner=user,
+        destination_url="https://example.com",
+        title="Limit reached",
+    )
+
+    assert link.owner == user

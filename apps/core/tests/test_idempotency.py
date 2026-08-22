@@ -4,7 +4,6 @@ import pytest
 from django.utils import timezone
 from rest_framework import status
 
-from apps.accounts.models import User
 from apps.core.idempotency import build_idempotency_request_hash
 from apps.core.models import IdempotencyRecord
 from apps.core.services import (
@@ -13,25 +12,7 @@ from apps.core.services import (
     idempotency_record_complete,
     idempotency_record_delete_expired,
 )
-from apps.links.models import ShortLink
 from apps.links.services import short_link_create
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(email="sulav@mail.com", password="sulavmhrzn")
-
-
-@pytest.fixture
-def another_user() -> User:
-    return User.objects.create_user(email="sweta@mail.com", password="swetalama")
-
-
-@pytest.fixture
-def short_link(user) -> ShortLink:
-    return short_link_create(
-        title="Example", destination_url="https://example.com", owner=user
-    )
 
 
 def test_idempotency_request_hash_is_independent_of_field_order() -> None:

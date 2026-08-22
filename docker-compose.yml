@@ -102,6 +102,17 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+    
+  stripe-cli:
+    image: stripe/stripe-cli
+    environment:
+      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
+    command: listen --forward-to api:8000/api/v1/billing/webhooks/stripe/
+    env_file:
+      - .env
+    depends_on:
+      - api
+      
   api:
     build:
       context: .

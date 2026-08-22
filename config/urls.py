@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt.views import (
-    TokenRefreshView,
     TokenVerifyView,
 )
 
@@ -27,6 +26,7 @@ urlpatterns = [
         name="token_refresh",
     ),
     path("api/v1/auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
+    path("api/v1/billing/", include("apps.billing.urls")),
     path("auth/", include("allauth.urls")),
     path(
         "<str:short_code>/",

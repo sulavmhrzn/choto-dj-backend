@@ -1,27 +1,10 @@
 import pytest
 from cryptography.fernet import Fernet
 
-from apps.accounts.models import User
 from apps.analytics.models import ClickEvent
 from apps.analytics.services import click_event_create
-from apps.links.models import ShortLink
-from apps.links.services import short_link_create
 from apps.webhooks.models import WebhookDelivery, WebhookEventType
 from apps.webhooks.services import webhook_endpoint_create
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(email="sulav@mail.com", password="sulavmhrzn")
-
-
-@pytest.fixture
-def short_link(user) -> ShortLink:
-    return short_link_create(
-        owner=user,
-        destination_url="https://example.com/first",
-        short_code="portfolio",
-    )
 
 
 @pytest.mark.django_db

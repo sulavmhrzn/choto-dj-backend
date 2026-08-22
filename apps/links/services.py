@@ -7,10 +7,16 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.billing.exceptions import PlanLimitExceededError
+from apps.billing.selectors import subscription_get_for_user_for_update
+from apps.billing.services import subscription_can_create_short_link
 from apps.links.cache import short_link_redirect_cache_delete
 from apps.links.metrics import short_links_created_total
 from apps.links.models import ShortLink
-from apps.links.selectors import short_link_list_expired_active
+from apps.links.selectors import (
+    short_link_count_for_user,
+    short_link_list_expired_active,
+)
 from apps.links.validators import is_reserved_short_code
 from apps.webhooks.models import WebhookEventType
 from apps.webhooks.services import webhook_event_dispatch
@@ -143,6 +149,7 @@ def _handle_short_link_deleted(
         )
 
 
+@transaction.atomic
 def short_link_create(
     *,
     owner: User,
@@ -151,6 +158,20 @@ def short_link_create(
     expires_at: datetime | None = None,
     short_code: str | None = None,
 ) -> ShortLink:
+
+    subscription = subscription_get_for_user_for_update(user=owner)
+
+    if subscription is None:
+        raise RuntimeError("User does not have a subscription")
+
+    current_short_link_count = short_link_count_for_user(user=owner)
+
+    if not subscription_can_create_short_link(
+        subscription=subscription,
+        current_short_link_count=current_short_link_count,
+    ):
+        raise PlanLimitExceededError("Short link limit reached for current plan.")
+
     if short_code is not None:
         return _short_link_create_with_custom_code(
             owner=owner,

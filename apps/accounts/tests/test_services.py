@@ -10,6 +10,7 @@ from apps.accounts.services import (
     user_deactivate,
     user_update_profile,
 )
+from apps.billing.models import PlanCode, SubscriptionStatus
 
 
 @pytest.fixture
@@ -34,6 +35,17 @@ def test_user_create() -> None:
     assert user.full_name == "New User"
     assert user.avatar_url == "https://example.com/avatar.jpg"
     assert user.check_password("strong-password")
+
+
+@pytest.mark.django_db
+def test_user_create_creates_free_subscription():
+    user = user_create(
+        email="user@example.com",
+        password="strong-password",
+    )
+
+    assert user.subscription.plan.code == PlanCode.FREE
+    assert user.subscription.status == SubscriptionStatus.ACTIVE
 
 
 @pytest.mark.django_db

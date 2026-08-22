@@ -5,7 +5,7 @@ import structlog
 from django.db import transaction
 from django.shortcuts import redirect
 from rest_framework import status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -16,6 +16,7 @@ from apps.accounts.models import User
 from apps.analytics.metrics import click_event_dispatch_total
 from apps.analytics.tasks import click_event_create_task
 from apps.analytics.utils import get_client_ip
+from apps.billing.exceptions import PlanLimitExceededError
 from apps.core.exceptions import IdempotencyConflict
 from apps.core.idempotency import build_idempotency_request_hash, get_idempotency_key
 from apps.core.models import IdempotencyRecord
@@ -86,6 +87,8 @@ class ShortLinkListCreateAPIView(APIView):
                 link = short_link_create(owner=user, **serializer.validated_data)
             except ValueError as exc:
                 raise ValidationError({"short_code": str(exc)})
+            except PlanLimitExceededError as exc:
+                raise PermissionDenied(str(exc)) from exc
 
             response_serializer = ShortLinkSerializer(link)
 

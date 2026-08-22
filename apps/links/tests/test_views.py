@@ -8,7 +8,6 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.core.idempotency import build_idempotency_request_hash
@@ -33,39 +32,6 @@ def use_test_cache(settings):
     cache.clear()
     yield
     cache.clear()
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(
-        email="sulav@example.com",
-        password="strong-password",
-    )
-
-
-@pytest.fixture
-def another_user() -> User:
-    return User.objects.create_user(
-        email="another@example.com",
-        password="strong-password",
-    )
-
-
-@pytest.fixture
-def api_client() -> APIClient:
-    return APIClient()
-
-
-@pytest.fixture
-def authenticated_client(
-    api_client: APIClient,
-    user: User,
-) -> APIClient:
-    refresh = RefreshToken.for_user(user)
-
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
-
-    return api_client
 
 
 @pytest.mark.django_db
@@ -1183,3 +1149,26 @@ def test_short_link_replay_does_not_call_creation_service(
     assert replay_response["Idempotency-Replayed"] == "true"
     assert replay_response.data == first_response.data
     assert ShortLink.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_short_link_create_returns_403_when_plan_limit_reached(
+    authenticated_client,
+    user,
+    short_link,
+):
+    subscription = user.subscription
+
+    subscription.plan.short_link_limit = 1
+    subscription.plan.save(
+        update_fields=["short_link_limit"],
+    )
+
+    response = authenticated_client.post(
+        reverse("links:list-create"),
+        {
+            "destination_url": "https://example.com/another",
+        },
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

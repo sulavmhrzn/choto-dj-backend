@@ -15,6 +15,7 @@ from apps.accounts.constants import (
 from apps.accounts.models import APIKey, User
 from apps.accounts.selectors import user_get_by_email
 from apps.accounts.types import CreatedAPIKey
+from apps.billing.services import subscription_create_default
 
 logger = structlog.getLogger()
 
@@ -41,6 +42,8 @@ def user_create(
         avatar_url=avatar_url,
         **extra_fields,
     )
+    subscription_create_default(user=user)
+
     logger.info("user_created", email=email, created_at=user.created_at)
     return user
 

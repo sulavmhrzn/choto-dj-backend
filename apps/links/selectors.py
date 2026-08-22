@@ -132,3 +132,7 @@ def short_link_list_expired_active() -> QuerySet[ShortLink]:
         expires_at__isnull=False,
         expires_at__lte=timezone.now(),
     )
+
+
+def short_link_count_for_user(*, user: User) -> int:
+    return ShortLink.objects.filter(owner=user).count()

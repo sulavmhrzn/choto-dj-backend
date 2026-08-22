@@ -1,9 +1,6 @@
 import pytest
 from django.core.cache import cache
-from psycopg.generators import execute
 
-from apps.accounts.models import User
-from apps.links.models import ShortLink
 from apps.links.selectors import short_link_get_redirectable_by_code
 from apps.links.services import short_link_create, short_link_delete, short_link_update
 
@@ -23,24 +20,6 @@ def use_test_cache(settings):
     cache.clear()
     yield
     cache.clear()
-
-
-@pytest.fixture
-def user(db):
-    return User.objects.create_user(
-        email="owner@example.com", full_name="Test owner", password="test-password"
-    )
-
-
-@pytest.fixture
-def short_link(user):
-    return ShortLink.objects.create(
-        owner=user,
-        short_code="abc123",
-        destination_url="https://example.com",
-        title="Example link",
-        is_active=True,
-    )
 
 
 def test_redirect_lookup_queries_database_on_cache_miss(
