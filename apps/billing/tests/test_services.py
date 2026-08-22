@@ -23,14 +23,19 @@ from apps.billing.services import (
     billing_checkout_session_create,
     billing_customer_get_or_create_stripe,
     provider_subscription_create,
+    stripe_invoice_payment_failed_handle,
     stripe_subscription_created_handle,
     stripe_subscription_deleted_handle,
     stripe_subscription_updated_handle,
     subscription_activate_plan,
     subscription_can_create_short_link,
     subscription_create_default,
+    subscription_update_status,
 )
-from apps.billing.tests.conftest import build_stripe_subscription_event
+from apps.billing.tests.conftest import (
+    build_stripe_invoice_event,
+    build_stripe_subscription_event,
+)
 
 
 @pytest.mark.django_db
@@ -416,3 +421,80 @@ def test_stripe_subscription_deleted_handle_noop_when_unknown(user):
 
     subscription.refresh_from_db()
     assert subscription.plan.code == PlanCode.PRO
+
+
+@pytest.mark.django_db
+def test_subscription_update_status_updates_only_status(user):
+    subscription = subscription_get_for_user(user=user)
+    original_plan = subscription.plan
+
+    result = subscription_update_status(
+        subscription=subscription, status=SubscriptionStatus.PAST_DUE
+    )
+    result.refresh_from_db()
+
+    assert result.status == SubscriptionStatus.PAST_DUE
+    assert result.plan == original_plan
+
+
+@pytest.mark.django_db
+def test_stripe_invoice_payment_failed_handle_marks_subscription_past_due(user):
+    subscription = subscription_get_for_user(user=user)
+    pro_plan = Plan.objects.get(code=PlanCode.PRO)
+    subscription.plan = pro_plan
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.save(update_fields=["plan", "status"])
+
+    billing_customer = BillingCustomer.objects.create(
+        user=user,
+        provider=PaymentProvider.STRIPE,
+        provider_customer_id="cus_test123",
+    )
+    ProviderSubscription.objects.create(
+        subscription=subscription,
+        billing_customer=billing_customer,
+        provider_subscription_id="sub_test123",
+    )
+    event = build_stripe_invoice_event()
+
+    stripe_invoice_payment_failed_handle(event=event)
+
+    subscription.refresh_from_db()
+    assert subscription.status == SubscriptionStatus.PAST_DUE
+    assert subscription.plan == pro_plan
+
+
+@pytest.mark.django_db
+def test_stripe_invoice_payment_failed_handle_noop_when_provider_subscription_unknown(
+    user,
+):
+    subscription = subscription_get_for_user(user=user)
+    pro_plan = Plan.objects.get(code=PlanCode.PRO)
+    subscription.plan = pro_plan
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.save(update_fields=["plan", "status"])
+
+    event = build_stripe_invoice_event(subscription="sub_never_seen")
+
+    stripe_invoice_payment_failed_handle(event=event)
+
+    subscription.refresh_from_db()
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_stripe_invoice_payment_failed_handle_noop_when_invoice_not_subscription_related(
+    user,
+):
+    subscription = subscription_get_for_user(user=user)
+    pro_plan = Plan.objects.get(code=PlanCode.PRO)
+    subscription.plan = pro_plan
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.save(update_fields=["plan", "status"])
+
+    event = build_stripe_invoice_event(subscription=None)
+
+    stripe_invoice_payment_failed_handle(event=event)
+
+    subscription.refresh_from_db()
+    assert subscription.status == SubscriptionStatus.ACTIVE

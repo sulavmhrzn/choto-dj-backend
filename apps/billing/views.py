@@ -15,6 +15,7 @@ from apps.billing.selectors import (
 from apps.billing.serializers import SubscriptionSerializer
 from apps.billing.services import (
     billing_checkout_session_create,
+    stripe_invoice_payment_failed_handle,
     stripe_subscription_created_handle,
     stripe_subscription_deleted_handle,
     stripe_subscription_updated_handle,
@@ -91,4 +92,6 @@ class StripeWebhookAPIView(APIView):
             stripe_subscription_updated_handle(event=event)
         elif event.type == "customer.subscription.deleted":
             stripe_subscription_deleted_handle(event=event)
+        elif event.type == "invoice.payment_failed":
+            stripe_invoice_payment_failed_handle(event=event)
         return Response(status=200)

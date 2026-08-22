@@ -296,3 +296,37 @@ def stripe_subscription_deleted_handle(*, event: stripe.Event) -> None:
         current_period_end=None,
         cancel_at_period_end=False,
     )
+
+
+def subscription_update_status(
+    *, subscription: Subscription, status: SubscriptionStatus
+) -> Subscription:
+    subscription.status = status
+    subscription.save(update_fields=["status", "updated_at"])
+    return subscription
+
+
+def stripe_invoice_payment_failed_handle(*, event: stripe.Event) -> None:
+    invoice = event.data.object
+
+    provider_subscription_id = getattr(invoice, "subscription", None)
+
+    if provider_subscription_id is None:
+        logger.info("stripe_webhook_invoice_not_subscription_related")
+        return
+
+    provider_subscription = provider_subscription_get_by_provider_id(
+        provider_subscription_id=provider_subscription_id
+    )
+
+    if provider_subscription is None:
+        logger.warning(
+            "stripe_webhook_unknown_provider_subscription",
+            provider_subscription_id=provider_subscription_id,
+        )
+        return
+
+    subscription_update_status(
+        subscription=provider_subscription.subscription,
+        status=SubscriptionStatus.PAST_DUE,
+    )

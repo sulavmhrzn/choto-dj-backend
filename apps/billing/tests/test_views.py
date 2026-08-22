@@ -210,3 +210,26 @@ def test_stripe_webhook_does_not_require_authentication(api_client):
         )
 
     assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_stripe_webhook_routes_invoice_payment_failed_to_handler(authenticated_client):
+    fake_event = type("Event", (), {"type": "invoice.payment_failed"})
+
+    with (
+        patch(
+            "apps.billing.views.stripe_webhook_event_construct", return_value=fake_event
+        ),
+        patch(
+            "apps.billing.views.stripe_invoice_payment_failed_handle"
+        ) as mock_handler,
+    ):
+        response = authenticated_client.post(
+            reverse("billing:stripe-webhook"),
+            data=b"{}",
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="valid_sig",
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    mock_handler.assert_called_once_with(event=fake_event)

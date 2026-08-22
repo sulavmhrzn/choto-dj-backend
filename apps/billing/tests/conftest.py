@@ -79,3 +79,14 @@ def build_stripe_subscription_event(**overrides):
     defaults.update(overrides)
 
     return SimpleNamespace(data=SimpleNamespace(object=FakeStripeObject(defaults)))
+
+
+def build_stripe_invoice_event(**overrides):
+    defaults = {
+        "id": "in_test123",
+        "subscription": "sub_test123",
+        "customer": "cus_test123",
+    }
+    defaults.update(overrides)
+
+    return SimpleNamespace(data=SimpleNamespace(object=FakeStripeObject(defaults)))
