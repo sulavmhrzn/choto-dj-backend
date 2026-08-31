@@ -134,6 +134,15 @@ def billing_checkout_session_create(*, user: User, plan: Plan, request) -> str:
     subscription = subscription_get_for_user(user=user)
 
     if subscription is not None and subscription.plan_id == plan.id:
+        if subscription.status == SubscriptionStatus.PAST_DUE:
+            raise ValidationError(
+                {
+                    "plan_code": (
+                        "Your Pro subscription has a payment issue. "
+                        "Please update your payment method instead of checking out again."
+                    )
+                }
+            )
         raise ValidationError({"plan_code": "You are already subscribed to this plan."})
 
     billing_customer = billing_customer_get_or_create_stripe(user=user)
@@ -145,8 +154,9 @@ def billing_checkout_session_create(*, user: User, plan: Plan, request) -> str:
     if provider_plan_price is None:
         raise RuntimeError(f"No Stripe price configured for plan '{plan.code}'")
 
-    success_url = request.build_absolute_uri(
-        reverse("billing:checkout-success") + "?session_id={CHECKOUT_SESSION_ID}"
+    success_url = (
+        request.build_absolute_uri(reverse("billing:checkout-success"))
+        + "?session_id={CHECKOUT_SESSION_ID}"
     )
 
     cancel_url = request.build_absolute_uri(reverse("billing:checkout-cancel"))

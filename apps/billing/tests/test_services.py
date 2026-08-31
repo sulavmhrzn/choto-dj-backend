@@ -498,3 +498,35 @@ def test_stripe_invoice_payment_failed_handle_noop_when_invoice_not_subscription
 
     subscription.refresh_from_db()
     assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_checkout_create_blocks_past_due_with_specific_message(user, rf):
+    subscription = subscription_get_for_user(user=user)
+    pro_plan = Plan.objects.get(code=PlanCode.PRO)
+    subscription.plan = pro_plan
+    subscription.status = SubscriptionStatus.PAST_DUE
+    subscription.save(update_fields=["plan", "status"])
+
+    request = rf.post("/")
+
+    with pytest.raises(ValidationError) as exc_info:
+        billing_checkout_session_create(user=user, plan=pro_plan, request=request)
+
+    assert "payment issue" in str(exc_info)
+
+
+@pytest.mark.django_db
+def test_checkout_create_blocks_active_resubscribe_with_generic_message(user, rf):
+    subscription = subscription_get_for_user(user=user)
+    pro_plan = Plan.objects.get(code=PlanCode.PRO)
+    subscription.plan = pro_plan
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.save(update_fields=["plan", "status"])
+
+    request = rf.post("/")
+
+    with pytest.raises(ValidationError) as exc_info:
+        billing_checkout_session_create(user=user, plan=pro_plan, request=request)
+
+    assert "already subscribed" in str(exc_info.value)
