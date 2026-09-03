@@ -126,6 +126,8 @@ class ShortLinkListCreateAPIView(APIView):
                 short_link = short_link_create(owner=user, **serializer.validated_data)
             except ValueError as exc:
                 raise ValidationError({"short_code": str(exc)})
+            except PlanLimitExceededError as exc:
+                raise PermissionDenied(str(exc)) from exc
 
             response_data = ShortLinkSerializer(short_link).data
 

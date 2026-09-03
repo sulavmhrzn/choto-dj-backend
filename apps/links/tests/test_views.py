@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from rest_framework.throttling import ScopedRateThrottle
 
 from apps.accounts.models import User
+from apps.billing.selectors import subscription_get_for_user
 from apps.core.idempotency import build_idempotency_request_hash
 from apps.core.models import IdempotencyRecord
 from apps.links import views
@@ -1172,3 +1173,36 @@ def test_short_link_create_returns_403_when_plan_limit_reached(
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_short_link_create_blocks_over_limit_without_idempotency_key(
+    authenticated_client, user
+):
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan.short_link_limit = 0
+    subscription.plan.save(update_fields=["short_link_limit"])
+
+    response = authenticated_client.post(
+        reverse("links:list-create"), {"destination_url": "https://example.com"}
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_short_link_create_over_limit_with_idempotency_key_leaves_no_stuck_record(
+    authenticated_client, user
+):
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan.short_link_limit = 0
+    subscription.plan.save(update_fields=["short_link_limit"])
+
+    authenticated_client.post(
+        reverse("links:list-create"),
+        {"destination_url": "https://example.com"},
+        HTTP_IDEMPOTENCY_KEY="test-key-rollback-check",
+    )
+
+    assert not IdempotencyRecord.objects.filter(
+        key="test-key-rollback-check", owner=user
+    ).exists()

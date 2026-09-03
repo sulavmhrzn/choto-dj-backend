@@ -10,7 +10,7 @@ IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 IDEMPOTENCY_KEY_MAX_LENGTH = 255
 
 
-def _serializer_idempotency_value(value: Any) -> Any:
+def _serialize_idempotency_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
 
@@ -22,7 +22,7 @@ def _serializer_idempotency_value(value: Any) -> Any:
 
 def build_idempotency_request_hash(*, data: dict) -> str:
     normalized_data = {
-        key: _serializer_idempotency_value(value) for key, value in data.items()
+        key: _serialize_idempotency_value(value) for key, value in data.items()
     }
 
     serialized_data = json.dumps(
