@@ -1158,7 +1158,7 @@ def test_short_link_create_returns_403_when_plan_limit_reached(
     user,
     short_link,
 ):
-    subscription = user.subscription
+    subscription = subscription_get_for_user(user=user)
 
     subscription.plan.short_link_limit = 1
     subscription.plan.save(

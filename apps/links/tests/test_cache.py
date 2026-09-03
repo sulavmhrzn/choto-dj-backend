@@ -22,6 +22,7 @@ def use_test_cache(settings):
     cache.clear()
 
 
+@pytest.mark.django_db
 def test_redirect_lookup_queries_database_on_cache_miss(
     short_link, django_assert_num_queries
 ):
@@ -32,6 +33,7 @@ def test_redirect_lookup_queries_database_on_cache_miss(
     assert result.destination_url == short_link.destination_url
 
 
+@pytest.mark.django_db
 def test_redirect_lookup_uses_cache_after_first_lookup(
     short_link, django_assert_num_queries
 ):
@@ -62,6 +64,7 @@ def test_missing_short_link_is_negatively_cached(django_assert_num_queries):
     assert second_result is None
 
 
+@pytest.mark.django_db
 def test_short_link_update_invalidates_redirect_cache(
     short_link,
     django_assert_num_queries,
@@ -85,6 +88,7 @@ def test_short_link_update_invalidates_redirect_cache(
     assert updated_result.destination_url == updated_destination
 
 
+@pytest.mark.django_db
 def test_short_link_deactivation_invalidates_redirect_cache(
     short_link,
     django_assert_num_queries,
@@ -110,6 +114,7 @@ def test_short_link_deactivation_invalidates_redirect_cache(
     assert result is None
 
 
+@pytest.mark.django_db
 def test_short_link_delete_invalidates_redirect_cache(
     short_link, django_assert_num_queries, django_capture_on_commit_callbacks
 ):
@@ -132,6 +137,7 @@ def test_short_link_delete_invalidates_redirect_cache(
     assert result is None
 
 
+@pytest.mark.django_db
 def test_short_link_create_clears_negative_cache(
     user,
     django_assert_num_queries,

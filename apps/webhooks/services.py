@@ -9,6 +9,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.billing.exceptions import PlanLimitExceededError
+from apps.billing.selectors import subscription_get_for_user_for_update
+from apps.billing.services import subscription_can_create_webhook_endpoint
 from apps.webhooks.constants import (
     WEBHOOK_DELIVERY_TIMEOUT_SECONDS,
     WEBHOOK_MAX_DELIVERY_ATTEMPTS,
@@ -31,6 +34,7 @@ from apps.webhooks.models import (
 from apps.webhooks.selectors import (
     webhook_delivery_get,
     webhook_delivery_get_retry_delay,
+    webhook_endpoint_count_for_user,
     webhook_endpoint_list_active_for_event,
 )
 from apps.webhooks.signing import build_signed_webhook_request
@@ -55,6 +59,18 @@ def webhook_endpoint_create(
     url: str,
     events: list[str],
 ) -> CreateWebhookEndpoint:
+    subscription = subscription_get_for_user_for_update(user=owner)
+    if subscription is None:
+        raise RuntimeError("User does not have a subscription")
+
+    current_webhook_endpoint_count = webhook_endpoint_count_for_user(user=owner)
+
+    if not subscription_can_create_webhook_endpoint(
+        subscription=subscription,
+        current_webhook_endpoint_count=current_webhook_endpoint_count,
+    ):
+        raise PlanLimitExceededError("Webhook endpoint limit reached for current plan.")
+
     secret = generate_webhook_secret()
     endpoint = WebhookEndpoint.objects.create(
         owner=owner,

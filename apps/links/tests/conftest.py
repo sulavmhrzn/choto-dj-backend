@@ -4,13 +4,23 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.accounts.services import user_create
+from apps.billing.models import PlanCode
+from apps.billing.selectors import plan_get_by_code, subscription_get_for_user
 from apps.links.models import ShortLink
 from apps.links.services import short_link_create
 
 
 @pytest.fixture
-def user(db) -> User:
-    return user_create(email="sulav@mail.com", password="strong-password")
+def user() -> User:
+    user = user_create(
+        email="sulav@mail.com",
+        password="sulavmhrzn",
+    )
+    pro_plan = plan_get_by_code(code=PlanCode.PRO)
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan = pro_plan
+    subscription.save(update_fields=["plan"])
+    return user
 
 
 @pytest.fixture

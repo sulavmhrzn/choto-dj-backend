@@ -6,25 +6,16 @@ import pytest
 from cryptography.fernet import Fernet
 from django.utils import timezone
 
-from apps.accounts.models import User
-from apps.webhooks.models import WebhookDelivery, WebhookEventType
+from apps.webhooks.models import WebhookDelivery, WebhookEndpoint, WebhookEventType
 from apps.webhooks.selectors import (
     webhook_delivery_get_for_user,
     webhook_delivery_list_for_endpoint,
+    webhook_endpoint_count_for_user,
     webhook_endpoint_list_active_for_event,
 )
 from apps.webhooks.services import (
-    webhook_deliveries_create_for_event,
     webhook_endpoint_create,
 )
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(
-        email="sulav@mail.com",
-        password="sulavmhrzn",
-    )
 
 
 @pytest.mark.django_db
@@ -186,3 +177,23 @@ def test_webhook_delivery_get_for_user_returns_none_when_missing(
     )
 
     assert result is None
+
+
+@pytest.mark.django_db
+def test_webhook_endpoint_count_for_user_includes_inactive(user):
+    WebhookEndpoint.objects.create(
+        owner=user,
+        name="active",
+        url="https://a.com",
+        events=[],
+        is_active=True,
+    )
+    WebhookEndpoint.objects.create(
+        owner=user,
+        name="inactive",
+        url="https://b.com",
+        events=[],
+        is_active=False,
+    )
+
+    assert webhook_endpoint_count_for_user(user=user) == 2

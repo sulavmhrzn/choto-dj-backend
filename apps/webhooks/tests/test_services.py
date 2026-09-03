@@ -6,6 +6,8 @@ import pytest
 from cryptography.fernet import Fernet
 from django.utils import timezone
 
+from apps.billing.exceptions import PlanLimitExceededError
+from apps.billing.selectors import subscription_get_for_user
 from apps.webhooks.constants import (
     WEBHOOK_MAX_DELIVERY_ATTEMPTS,
     WEBHOOK_RESPONSE_BODY_MAX_LENGTH,
@@ -647,3 +649,25 @@ def test_webhook_delivery_send_stops_retrying_after_maximum_attempts(
 
     assert webhook_delivery.attempt_count == WEBHOOK_MAX_DELIVERY_ATTEMPTS
     assert webhook_delivery.next_attempt_at is None
+
+
+@pytest.mark.django_db
+def test_webhook_endpoint_create_allows_up_to_limit(user):
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan.webhook_endpoint_limit = 1
+    subscription.plan.save(update_fields=["webhook_endpoint_limit"])
+
+    webhook_endpoint_create(
+        owner=user,
+        name="first",
+        url="https://a.com",
+        events=[],
+    )
+
+    with pytest.raises(PlanLimitExceededError):
+        webhook_endpoint_create(
+            owner=user,
+            name="second",
+            url="https://b.com",
+            events=[],
+        )

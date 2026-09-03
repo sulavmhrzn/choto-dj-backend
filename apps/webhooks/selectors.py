@@ -65,3 +65,7 @@ def webhook_delivery_get_for_user(
         .select_related("endpoint")
         .first()
     )
+
+
+def webhook_endpoint_count_for_user(*, user: User) -> int:
+    return WebhookEndpoint.objects.filter(owner=user).count()

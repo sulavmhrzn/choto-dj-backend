@@ -5,11 +5,10 @@ import pytest
 from cryptography.fernet import Fernet
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.accounts.services import api_key_create
+from apps.billing.selectors import subscription_get_for_user
 from apps.webhooks.encryption import decrypt_webhook_secret
 from apps.webhooks.models import (
     WebhookDelivery,
@@ -21,40 +20,6 @@ from apps.webhooks.services import (
     webhook_endpoint_create,
     webhook_endpoint_update,
 )
-
-
-@pytest.fixture
-def user() -> User:
-    return User.objects.create_user(
-        email="sulav@mail.com",
-        password="sulavmhrzn",
-    )
-
-
-@pytest.fixture
-def another_user() -> User:
-    return User.objects.create_user(
-        email="sweta@mail.com",
-        password="sweta",
-    )
-
-
-@pytest.fixture
-def api_client() -> APIClient:
-    return APIClient()
-
-
-@pytest.fixture
-def authenticated_client(
-    api_client: APIClient,
-    user: User,
-) -> APIClient:
-    refresh = RefreshToken.for_user(user)
-    access_token = str(refresh.access_token)
-
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
-
-    return api_client
 
 
 @pytest.mark.django_db
@@ -864,3 +829,21 @@ def test_webhook_delivery_detail_requires_authentication(api_client, webhook_del
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_webhook_endpoint_create_blocks_over_limit(authenticated_client, user):
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan.webhook_endpoint_limit = 0
+    subscription.plan.save(update_fields=["webhook_endpoint_limit"])
+
+    response = authenticated_client.post(
+        reverse("webhooks:endpoint-list-create"),
+        {
+            "name": "test",
+            "url": "https://example.com/hook",
+            "events": ["short_link.created"],
+        },
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

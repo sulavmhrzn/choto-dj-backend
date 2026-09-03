@@ -15,3 +15,7 @@ wheels/
 celerybeat-schedule
 celerybeat-schedule-shm
 celerybeat-schedule-wal
+
+# Markdown docs (keep only README.md tracked)
+*.md
+!README.md

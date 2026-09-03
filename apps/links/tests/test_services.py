@@ -6,6 +6,7 @@ from cryptography.fernet import Fernet
 from django.utils import timezone
 
 from apps.billing.exceptions import PlanLimitExceededError
+from apps.billing.selectors import subscription_get_for_user
 from apps.links import services
 from apps.links.models import ShortLink
 from apps.links.services import (
@@ -731,7 +732,7 @@ def test_webhook_dispatch_failure_does_not_undo_short_link_delete(
 
 @pytest.mark.django_db
 def test_short_link_create_fails_when_plan_limit_reached(user, short_link):
-    subscription = user.subscription
+    subscription = subscription_get_for_user(user=user)
     subscription.plan.short_link_limit = 1
     subscription.plan.save(update_fields=["short_link_limit"])
 

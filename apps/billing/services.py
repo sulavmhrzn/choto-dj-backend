@@ -52,6 +52,12 @@ def subscription_can_create_short_link(
     return current_short_link_count < subscription.plan.short_link_limit
 
 
+def subscription_can_create_webhook_endpoint(
+    *, subscription: Subscription, current_webhook_endpoint_count: int
+) -> bool:
+    return current_webhook_endpoint_count < subscription.plan.webhook_endpoint_limit
+
+
 @transaction.atomic
 def billing_customer_get_or_create_stripe(*, user: User) -> BillingCustomer:
     billing_customer = billing_customer_get_for_user(

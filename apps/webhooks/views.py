@@ -2,7 +2,7 @@ from typing import cast
 from uuid import UUID
 
 from rest_framework import status
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import User
+from apps.billing.exceptions import PlanLimitExceededError
 from apps.webhooks.selectors import (
     webhook_delivery_get_for_user,
     webhook_delivery_list_for_endpoint,
@@ -37,13 +38,15 @@ class WebhookEndpointListCreateAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = cast(User, request.user)
-
-        created = webhook_endpoint_create(
-            owner=user,
-            name=serializer.validated_data["name"],
-            url=serializer.validated_data["url"],
-            events=serializer.validated_data["events"],
-        )
+        try:
+            created = webhook_endpoint_create(
+                owner=user,
+                name=serializer.validated_data["name"],
+                url=serializer.validated_data["url"],
+                events=serializer.validated_data["events"],
+            )
+        except PlanLimitExceededError as exc:
+            raise PermissionDenied(str(exc)) from exc
 
         response_data = {
             **WebhookEndpointSerializer(created.endpoint).data,

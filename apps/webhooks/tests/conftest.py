@@ -1,25 +1,40 @@
 import pytest
 from cryptography.fernet import Fernet
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
+from apps.accounts.services import user_create
+from apps.billing.models import PlanCode
+from apps.billing.selectors import plan_get_by_code, subscription_get_for_user
 from apps.webhooks.models import WebhookDelivery, WebhookEndpoint, WebhookEventType
 from apps.webhooks.services import webhook_endpoint_create
 
 
 @pytest.fixture
 def user() -> User:
-    return User.objects.create_user(
+    user = user_create(
         email="sulav@mail.com",
         password="sulavmhrzn",
     )
+    pro_plan = plan_get_by_code(code=PlanCode.PRO)
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan = pro_plan
+    subscription.save(update_fields=["plan"])
+    return user
 
 
 @pytest.fixture
 def another_user() -> User:
-    return User.objects.create_user(
+    user = user_create(
         email="sweta@mail.com",
         password="sweta",
     )
+    pro_plan = plan_get_by_code(code=PlanCode.PRO)
+    subscription = subscription_get_for_user(user=user)
+    subscription.plan = pro_plan
+    subscription.save(update_fields=["plan"])
+    return user
 
 
 @pytest.fixture
@@ -58,3 +73,21 @@ def webhook_delivery(
             },
         },
     )
+
+
+@pytest.fixture
+def api_client() -> APIClient:
+    return APIClient()
+
+
+@pytest.fixture
+def authenticated_client(
+    api_client: APIClient,
+    user: User,
+) -> APIClient:
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+
+    return api_client
