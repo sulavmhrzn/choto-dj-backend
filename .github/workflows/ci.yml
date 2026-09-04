@@ -38,6 +38,7 @@ jobs:
             DJANGO_SETTINGS_MODULE: config.settings
             SECRET_KEY: ci-only-secret-key
             DEBUG: "False"
+            CSRF_TRUSTED_ORIGINS: http://localhost,https://choto-api.sulavm.com.np
 
             POSTGRES_DB: choto_test
             POSTGRES_USER: postgres
