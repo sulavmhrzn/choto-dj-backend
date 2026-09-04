@@ -14,6 +14,7 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 
 
 ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS").split(",")
 
 
 INSTALLED_APPS = [
