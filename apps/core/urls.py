@@ -1,10 +1,15 @@
-from django.urls import include, path
+from django.urls import path
 
-from apps.core.views import LivenessAPIView, ReadinessAPIView
+from apps.core.views import APIRootAPIView, LivenessAPIView, ReadinessAPIView
 
 app_name = "core"
 
 urlpatterns = [
+    path(
+        "",
+        APIRootAPIView.as_view(),
+        name="api-root",
+    ),
     path(
         "health/live/",
         LivenessAPIView.as_view(),
