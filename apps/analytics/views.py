@@ -4,7 +4,8 @@ from uuid import UUID
 
 import structlog
 from django.utils import timezone
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -35,6 +36,28 @@ class ShortLinkAnalyticsAPIView(APIView):
 
         return link
 
+    @extend_schema(
+        tags=["Analytics"],
+        responses=inline_serializer(
+            name="ShortLinkAnalyticsResponse",
+            fields={
+                "total_clicks": serializers.IntegerField(),
+                "clicks_today": serializers.IntegerField(),
+                "unique_visitors": serializers.IntegerField(),
+                "first_clicked_at": serializers.DateTimeField(allow_null=True),
+                "last_clicked_at": serializers.DateTimeField(allow_null=True),
+                "recent_clicks": ClickEventSerializer(many=True),
+                "clicks_over_time": inline_serializer(
+                    name="DailyClickCount",
+                    fields={
+                        "date": serializers.DateField(),
+                        "clicks": serializers.IntegerField(),
+                    },
+                    many=True,
+                ),
+            },
+        ),
+    )
     def get(self, request: Request, link_id: UUID) -> Response:
         user = cast(User, request.user)
         link = self._get_short_link_or_404(user=user, link_id=link_id)

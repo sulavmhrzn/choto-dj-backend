@@ -1,7 +1,8 @@
 from typing import cast
 from uuid import UUID
 
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
@@ -31,6 +32,7 @@ from apps.links.serializers import APIKeyCreateSerailizer, APIKeySerializer
 class UserMeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(tags=["Accounts"], responses=UserMeSerializer)
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
         serializer = UserMeSerializer(user)
@@ -39,6 +41,11 @@ class UserMeAPIView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["Accounts"],
+        request=UserProfileUpdateSerializer,
+        responses=UserMeSerializer,
+    )
     def patch(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -59,12 +66,14 @@ class UserMeAPIView(APIView):
         )
 
 
+@extend_schema_view(post=extend_schema(tags=["Accounts"]))
 class CustomTokenObtainPairAPIView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
 
 
+@extend_schema_view(post=extend_schema(tags=["Accounts"]))
 class CustomTokenRefreshAPIView(TokenRefreshView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "token_refresh"
@@ -76,6 +85,17 @@ class GoogleOAuthTokenAPIView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "google_oauth_token"
 
+    @extend_schema(
+        tags=["Accounts"],
+        responses=inline_serializer(
+            name="GoogleOAuthTokenResponse",
+            fields={
+                "access": serializers.CharField(),
+                "refresh": serializers.CharField(),
+                "user": UserMeSerializer(),
+            },
+        ),
+    )
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -93,6 +113,14 @@ class APIKeyListCreateAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Accounts"],
+        request=APIKeyCreateSerailizer,
+        responses=inline_serializer(
+            name="APIKeyCreateResponse",
+            fields={**APIKeySerializer().fields, "key": serializers.CharField()},
+        ),
+    )
     def post(self, request: Request) -> Response:
         serializer = APIKeyCreateSerailizer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -108,6 +136,7 @@ class APIKeyListCreateAPIView(APIView):
         }
         return Response(data=response_data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(tags=["Accounts"], responses=APIKeySerializer(many=True))
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -121,6 +150,7 @@ class APIKeyRevokeAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(tags=["Accounts"], request=None, responses=APIKeySerializer)
     def post(self, request: Request, api_key_id: UUID) -> Response:
         user = cast(User, request.user)
 

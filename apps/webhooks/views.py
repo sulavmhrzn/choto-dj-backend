@@ -1,7 +1,8 @@
 from typing import cast
 from uuid import UUID
 
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -33,6 +34,17 @@ class WebhookEndpointListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    @extend_schema(
+        tags=["Webhooks"],
+        request=WebhookEndpointCreateSerializer,
+        responses=inline_serializer(
+            name="WebhookEndpointCreateResponse",
+            fields={
+                **WebhookEndpointSerializer().fields,
+                "secret": serializers.CharField(),
+            },
+        ),
+    )
     def post(self, request: Request) -> Response:
         serializer = WebhookEndpointCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -54,6 +66,11 @@ class WebhookEndpointListCreateAPIView(APIView):
         }
         return Response(response_data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        tags=["Webhooks"],
+        operation_id="webhooks_endpoints_list",
+        responses=WebhookEndpointSerializer(many=True),
+    )
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -66,6 +83,11 @@ class WebhookEndpointDetailAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Webhooks"],
+        operation_id="webhooks_endpoints_retrieve",
+        responses=WebhookEndpointSerializer,
+    )
     def get(self, request: Request, endpoint_id: UUID) -> Response:
         user = cast(User, request.user)
 
@@ -79,6 +101,11 @@ class WebhookEndpointDetailAPIView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["Webhooks"],
+        request=WebhookEndpointUpdateSerializer,
+        responses=WebhookEndpointSerializer,
+    )
     def patch(self, request: Request, endpoint_id: UUID) -> Response:
         user = cast(User, request.user)
 
@@ -110,6 +137,11 @@ class WebhookEndpointDetailAPIView(APIView):
 class WebhookEndpointDeliveryListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Webhooks"],
+        parameters=[WebhookDeliveryFilterSerializer],
+        responses=WebhookDeliveryListSerializer(many=True),
+    )
     def get(self, request: Request, endpoint_id: UUID) -> Response:
         endpoint = webhook_endpoint_get_for_user(
             user=request.user, endpoint_id=endpoint_id
@@ -135,6 +167,7 @@ class WebhookEndpointDeliveryListAPIView(APIView):
 class WebhookDeliveryDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(tags=["Webhooks"], responses=WebhookDeliveryDetailSerializer)
     def get(self, request: Request, delivery_id: UUID) -> Response:
         delivery = webhook_delivery_get_for_user(
             user=request.user, delivery_id=delivery_id

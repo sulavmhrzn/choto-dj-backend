@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
     "django_prometheus",
+    "drf_spectacular",
     # Local apps
     "apps.accounts",
     "apps.links",
@@ -132,6 +133,7 @@ REST_FRAMEWORK = {
         "apps.accounts.authentication.APIKeyAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_RENDERER_CLASSES": [
         "config.api.renderers.StructuredJSONRenderer",
@@ -148,6 +150,19 @@ REST_FRAMEWORK = {
         "token_refresh": "30/minute",
     },
 }
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Choto API",
+    "DESCRIPTION": "API-first URL shortener with plan-based billing.",
+    "VERSION": "1.0.0",
+    "ENUM_NAME_OVERRIDES": {
+        "PlanCodeEnum": "apps.billing.models.PlanCode",
+        "SubscriptionStatusEnum": "apps.billing.models.SubscriptionStatus",
+        "WebhookEventTypeEnum": "apps.webhooks.models.WebhookEventType",
+        "WebhookDeliveryStatusEnum": "apps.webhooks.models.WebhookDeliveryStatus",
+    },
+}
+
 
 SIMPLET_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),

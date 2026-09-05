@@ -1,5 +1,7 @@
 import structlog
 from django.views.generic import TemplateView
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
@@ -35,6 +37,7 @@ class CheckoutCancelView(TemplateView):
 class SubscriptionDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(tags=["Billing"], responses=SubscriptionSerializer)
     def get(self, request: Request) -> Response:
         subscription = subscription_get_for_user(user=request.user)
 
@@ -49,6 +52,17 @@ class SubscriptionDetailAPIView(APIView):
 class CheckoutSessionCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Billing"],
+        request=inline_serializer(
+            name="CheckoutSessionCreateRequest",
+            fields={"plan_code": serializers.ChoiceField(choices=PlanCode.choices)},
+        ),
+        responses=inline_serializer(
+            name="CheckoutSessionCreateResponse",
+            fields={"checkout_url": serializers.URLField()},
+        ),
+    )
     def post(self, request: Request) -> Response:
         plan_code = request.data.get("plan_code")
 
@@ -69,6 +83,7 @@ class CheckoutSessionCreateAPIView(APIView):
         return Response({"checkout_url": checkout_url})
 
 
+@extend_schema(exclude=True)
 class StripeWebhookAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []

@@ -1,5 +1,6 @@
 import structlog
 from django.urls import reverse
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import TemplateHTMLRenderer
@@ -13,6 +14,7 @@ from config.api.renderers import StructuredJSONRenderer
 logger = structlog.getLogger()
 
 
+@extend_schema(exclude=True)
 class LivenessAPIView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -21,6 +23,7 @@ class LivenessAPIView(APIView):
         return Response(data={"status": "ok"}, status=status.HTTP_200_OK)
 
 
+@extend_schema(exclude=True)
 class ReadinessAPIView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -43,6 +46,7 @@ class ReadinessAPIView(APIView):
         )
 
 
+@extend_schema(exclude=True)
 class APIRootAPIView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]

@@ -1,5 +1,6 @@
 import secrets
 
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
@@ -71,3 +72,16 @@ class APIKeyAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request) -> str:
         return self.keyword
+
+
+class APIKeyAuthenticationScheme(OpenApiAuthenticationExtension):
+    target_class = APIKeyAuthentication
+    name = "ApiKeyAuth"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Authorization",
+            "description": f"{API_KEY_AUTH_SCHEME} <prefix>.<secret>",
+        }

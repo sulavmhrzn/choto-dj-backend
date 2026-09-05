@@ -4,6 +4,7 @@ from uuid import UUID
 import structlog
 from django.db import transaction
 from django.shortcuts import redirect
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -49,6 +50,12 @@ class ShortLinkListCreateAPIView(APIView):
             return [ScopedRateThrottle()]
         return []
 
+    @extend_schema(
+        tags=["Links"],
+        operation_id="links_list",
+        parameters=[ShortLinkListQuerySerializer],
+        responses=ShortLinkSerializer(many=True),
+    )
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -75,6 +82,11 @@ class ShortLinkListCreateAPIView(APIView):
             message="Short links retrieved successfully",
         )
 
+    @extend_schema(
+        tags=["Links"],
+        request=ShortLinkCreateSerializer,
+        responses=ShortLinkSerializer,
+    )
     def post(self, request: Request) -> Response:
         user = cast(User, request.user)
 
@@ -159,6 +171,11 @@ class ShortLinkDetailAPIView(APIView):
 
         return link
 
+    @extend_schema(
+        tags=["Links"],
+        operation_id="links_retrieve",
+        responses=ShortLinkSerializer,
+    )
     def get(self, request: Request, link_id: UUID) -> Response:
         user = cast(User, request.user)
         link = self.get_link(user=user, link_id=link_id)
@@ -166,6 +183,11 @@ class ShortLinkDetailAPIView(APIView):
         serializer = ShortLinkSerializer(link)
         return Response(data=serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Links"],
+        request=ShortLinkUpdateSerializer,
+        responses=ShortLinkSerializer,
+    )
     def patch(self, request: Request, link_id: UUID) -> Response:
         user = cast(User, request.user)
         link = self.get_link(user=user, link_id=link_id)
@@ -184,6 +206,7 @@ class ShortLinkDetailAPIView(APIView):
 
         return Response(data=response_serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(tags=["Links"], responses={204: None})
     def delete(self, request: Request, link_id: UUID):
         user = cast(User, request.user)
         link = self.get_link(user=user, link_id=link_id)
@@ -193,6 +216,7 @@ class ShortLinkDetailAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema(exclude=True)
 class ShortLinkRedirectAPIView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
